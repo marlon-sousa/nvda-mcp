@@ -57,6 +57,7 @@ __all__ = [
 	"GetBrailleParams",
 	"BrailleResult",
 	"FocusInfoResult",
+	"StateResult",
 	"GetConfigParams",
 	"SetConfigParams",
 	"ConfigResult",
@@ -98,6 +99,7 @@ class Command:
 	WAIT_FOR_SPEECH_TO_FINISH: Final = "waitForSpeechToFinish"
 	GET_BRAILLE: Final = "getBraille"
 	GET_FOCUS_INFO: Final = "getFocusInfo"
+	GET_STATE: Final = "getState"
 	GET_CONFIG: Final = "getConfig"
 	SET_CONFIG: Final = "setConfig"
 	BYE: Final = "bye"
@@ -114,6 +116,7 @@ class Command:
 			WAIT_FOR_SPEECH_TO_FINISH,
 			GET_BRAILLE,
 			GET_FOCUS_INFO,
+			GET_STATE,
 			GET_CONFIG,
 			SET_CONFIG,
 			BYE,
@@ -404,6 +407,23 @@ class FocusInfoResult:
 	states: list[str]
 	value: str | None
 	appModule: str | None
+
+
+@dataclass
+class StateResult:
+	"""Queryable NVDA state that may be signalled by sound rather than speech.
+
+	Diff two snapshots across a gesture to assert a toggle (e.g. NVDA+space
+	flipping ``browseMode`` between ``"browse"`` and ``"focus"``).
+	"""
+
+	#: ``"browse"`` / ``"focus"`` from the focus object's
+	#: ``treeInterceptor.passThrough``; ``None`` when there is no browse document.
+	browseMode: str | None
+	#: ``"talk"`` / ``"beeps"`` / ``"off"`` / ``"onDemand"``.
+	speechMode: str
+	sleepMode: bool
+	inputHelp: bool
 
 
 @dataclass

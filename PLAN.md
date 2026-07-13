@@ -90,6 +90,24 @@ substituted from `buildVars.py`'s `addon_info` at build time, producing
 - **Introspection**: focus / navigator object info via `api.getFocusObject()`
   (name, role, states, value, appModule name), config get/set (port of
   `set_configValue`).
+- **State snapshot** (`getState`): queryable NVDA state that an agent asserts
+  on but that is *not* carried by speech — because NVDA may answer with an
+  earcon/beep instead of words (e.g. NVDA+space toggles browse/focus mode;
+  `browseMode.reportPassThrough` plays `focusMode.wav`/`browseMode.wav` when
+  `passThroughAudioIndication` is on, so there is nothing to match in the
+  speech buffer). Returns:
+  - `browseMode`: `"browse"` / `"focus"` / `null` — from the focus object's
+    `treeInterceptor.passThrough` (`True` = focus mode), `null` when the focus
+    has no browse-mode document.
+  - `speechMode`: `"talk"` / `"beeps"` / `"off"` / `"onDemand"` — from
+    `speech.getState().speechMode`.
+  - `sleepMode`: focus `appModule.sleepMode`.
+  - `inputHelp`: `inputCore.manager.isInputHelpActive`.
+  Config-independent and unambiguous: `getState` → gesture → `getState` and
+  diff. (Generalizing capture to audio cues — hooking `tones.beep` /
+  `nvwave.playWaveFile` into an indexed buffer so beeps/earcons/custom addon
+  sounds become assertable events — was considered and **deferred**; add it
+  only if state snapshots prove insufficient.)
 
 ### `synthDrivers/nvdaMcpSpy.py`
 
@@ -166,7 +184,7 @@ Request `{"id": n, "cmd": str, "params": {...}}` →
 Commands (v1): `hello`, `ping`, `pressGesture`, `getSpeech` (since index),
 `getLastSpeech`, `getNextSpeechIndex`, `waitForSpeech`,
 `waitForSpeechToFinish`, `getBraille` (since index), `getFocusInfo`,
-`getConfig`, `setConfig`, `bye`.
+`getState`, `getConfig`, `setConfig`, `bye`.
 
 ## Component 2: `server/` — the MCP server
 
@@ -191,6 +209,7 @@ MCP tools (v1):
 | `nvda_do(gestures: list[str]) -> str` | convenience: reset index → send keys → wait finish → return speech since index. The primary tool agents should use; makes wrong sequencing impossible |
 | `nvda_get_braille()` | |
 | `nvda_get_focus_info()` | |
+| `nvda_get_state()` | queryable state NVDA may signal by sound not speech: `browseMode` (`"browse"`/`"focus"`/`null`), `speechMode`, `sleepMode`, `inputHelp`. Diff across a gesture to assert mode toggles |
 | `nvda_set_config(key_path: list[str], value)` / `nvda_get_config(key_path)` | |
 
 ## Repository layout
@@ -270,7 +289,8 @@ Tests accompany each milestone rather than arriving at the end.
 4. **MCP server** — `nvda-mcp` package with the v1 tools; wire into Claude
    Code via stdio; first agent-driven smoke test (Notepad: type, arrow around,
    assert speech).
-5. **Introspection** — focus info, braille, config get/set.
+5. **Introspection** — focus info, braille, **state snapshot** (`getState`:
+   browse/focus mode, speech mode, sleep, input help), config get/set.
 6. **Real-world validation** — script an EnhancedFindDialog functional test
    end-to-end through the MCP; fix ergonomics that surface.
 7. **Packaging & docs** — one GitHub release per tag carries **both

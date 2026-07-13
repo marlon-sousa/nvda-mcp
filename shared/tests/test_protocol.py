@@ -217,6 +217,7 @@ def test_command_set_matches_plan_v1() -> None:
 		"waitForSpeechToFinish",
 		"getBraille",
 		"getFocusInfo",
+		"getState",
 		"getConfig",
 		"setConfig",
 		"bye",
@@ -244,6 +245,8 @@ def test_hello_result_serializes_all_fields() -> None:
 		(p.WaitToFinishParams, {}),
 		(p.GetConfigParams, {"keyPath": ["speech", "synth"]}),
 		(p.FocusInfoResult, {"name": "OK", "role": "button", "states": [], "value": None, "appModule": "notepad"}),
+		(p.StateResult, {"browseMode": "focus", "speechMode": "talk", "sleepMode": False, "inputHelp": False}),
+		(p.StateResult, {"browseMode": None, "speechMode": "beeps", "sleepMode": True, "inputHelp": False}),
 	],
 )
 def test_representative_payloads_validate(cls: type[Any], payload: dict[str, Any]) -> None:
