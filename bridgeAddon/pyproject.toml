@@ -1,0 +1,39 @@
+# Bridge (NVDA addon) tooling config. The addon itself is built with scons
+# (see sconstruct); this file only configures the linters/type-checker.
+
+[tool.ruff]
+line-length = 110
+
+builtins = ["_", "ngettext", "pgettext", "npgettext"]
+include = ["*.py", "sconstruct"]
+exclude = [".git", "__pycache__"]
+
+[tool.ruff.format]
+indent-style = "tab"
+
+[tool.ruff.lint]
+ignore = ["W191"]
+
+[tool.ruff.lint.per-file-ignores]
+"sconstruct" = ["F821"]
+
+[tool.pyright]
+pythonVersion = "3.13"       # NVDA 2026.1 embeds CPython 3.13
+pythonPlatform = "Windows"
+typeCheckingMode = "strict"
+
+# Only OUR code is reported. NVDA's source (and the copied protocol module) are
+# resolved via extraPaths as libraries, so a future NVDA API break surfaces as
+# a type error in our code rather than a runtime surprise.
+include = ["addon/globalPlugins", "addon/synthDrivers", "buildVars.py"]
+exclude = ["sconstruct", ".git", "__pycache__"]
+
+extraPaths = [
+    "./addon",
+    # NVDA 2026.1 source checkout, a sibling of the nvda-mcp repo. CI uses a
+    # shallow sparse checkout of nvda/source.
+    "../../nvda/source",
+]
+
+analyzeUnannotatedFunctions = true
+reportMissingModuleSource = false

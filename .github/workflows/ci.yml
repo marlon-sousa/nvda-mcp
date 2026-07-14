@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  shared:
+    name: shared wire (tests + pyright)
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: shared
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv run --python 3.13 pytest -q
+      - run: uv run --python 3.13 pyright
+
+  server:
+    name: server (tests + pyright)
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: mcpServer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv run --python 3.13 pytest -q
+      - run: uv run --python 3.13 pyright
+
+  bridge:
+    name: bridge (pyright against NVDA source)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: nvda-mcp
+      # Type-check the addon against the real NVDA 2026.1 APIs. A shallow,
+      # sparse checkout of just nvda/source keeps this fast.
+      - name: Checkout NVDA source (sparse)
+        uses: actions/checkout@v4
+        with:
+          repository: nvaccess/nvda
+          ref: release-2026.1
+          path: nvda
+          sparse-checkout: source
+          fetch-depth: 1
+      - uses: astral-sh/setup-uv@v5
+      - name: Sync shared wire module into addon
+        working-directory: nvda-mcp/bridgeAddon
+        run: python sync_shared.py
+      - name: Pyright
+        working-directory: nvda-mcp/bridgeAddon
+        run: uv run --python 3.13 --with pyright pyright
