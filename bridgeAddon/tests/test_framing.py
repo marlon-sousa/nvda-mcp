@@ -7,7 +7,7 @@ import pytest
 from fakes import EOF_EVENT, TIMEOUT_EVENT, FakeTransport
 
 from nvdaMcpBridge import protocol as p
-from nvdaMcpBridge.framing import TIMEOUT, Connection, ConnectionClosed
+from nvdaMcpBridge.domain.framing import TIMEOUT, Connection, ConnectionClosed
 
 
 def test_reads_a_whole_message() -> None:

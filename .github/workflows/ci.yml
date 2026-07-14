@@ -31,29 +31,19 @@ jobs:
       - run: uv run --python 3.13 pyright
 
   bridge:
-    name: bridge (pyright against NVDA source)
+    name: bridge (headless tests + pyright)
     runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: bridgeAddon
     steps:
       - uses: actions/checkout@v4
-        with:
-          path: nvda-mcp
-      # Type-check the addon against the real NVDA 2026.1 APIs. A shallow,
-      # sparse checkout of just nvda/source keeps this fast.
-      - name: Checkout NVDA source (sparse)
-        uses: actions/checkout@v4
-        with:
-          repository: nvaccess/nvda
-          ref: release-2026.1
-          path: nvda
-          sparse-checkout: source
-          fetch-depth: 1
       - uses: astral-sh/setup-uv@v5
+      # The domain is pure (no NVDA); the NVDA edge is in pyright's ignore list,
+      # so no NVDA source checkout or stubs are needed.
       - name: Sync shared wire module into addon
-        working-directory: nvda-mcp/bridgeAddon
         run: python sync_shared.py
       - name: Tests (headless bridge core)
-        working-directory: nvda-mcp/bridgeAddon
         run: uv run --python 3.13 --with pytest pytest -q
       - name: Pyright
-        working-directory: nvda-mcp/bridgeAddon
-        run: uv run --python 3.13 --with pyright pyright
+        run: uv run --python 3.13 --with pyright --with pytest pyright

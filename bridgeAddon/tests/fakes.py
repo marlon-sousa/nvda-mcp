@@ -1,22 +1,33 @@
-# Fakes implementing the bridge adapter Protocols, for headless tests.
+# Fakes implementing the bridge domain ports, for headless tests.
 # Copyright (C) 2026 Marlon Brandao de Sousa. GPL-2. See COPYING.txt.
 #
-# These stand in for NVDA and the socket so the whole session state machine can
-# be exercised deterministically: the clock only advances when told (or on a
-# scripted transport timeout), so heartbeat / inactivity / wait timeouts are
-# tested without ever sleeping in real time; the transport replays a scripted
-# sequence of frames, timeouts and EOF and records every response written back.
+# Each fake subclasses the corresponding ABC port, so a forgotten method fails
+# here just as it would for the real NVDA adapter. They stand in for NVDA and
+# the socket so the whole session state machine runs deterministically: the
+# clock only advances when told (or on a scripted transport timeout), and the
+# transport replays a scripted sequence of frames, timeouts and EOF while
+# recording every response written back.
 
 from __future__ import annotations
 
 from typing import Any, Final
 
 from nvdaMcpBridge import protocol as p
-from nvdaMcpBridge.speech_buffer import BrailleBuffer, SpeechBuffer
+from nvdaMcpBridge.domain.ports import (
+	AdapterFactory,
+	AdapterSet,
+	Clock,
+	GestureSender,
+	SpeechSource,
+	SynthSwapper,
+	Transcript,
+	Transport,
+)
+from nvdaMcpBridge.domain.speech_buffer import BrailleBuffer, SpeechBuffer
 
 
-class FakeClock:
-	"""A :class:`~nvdaMcpBridge.adapters.Clock` whose time only moves on demand."""
+class FakeClock(Clock):
+	"""A :class:`Clock` whose time only moves on demand."""
 
 	def __init__(self, start: float = 0.0) -> None:
 		self._now = start
@@ -50,8 +61,8 @@ TIMEOUT_EVENT: Final = _TimeoutEvent()
 EOF_EVENT: Final = _EofEvent()
 
 
-class FakeTransport:
-	"""Scriptable byte transport for :class:`~nvdaMcpBridge.framing.Connection`.
+class FakeTransport(Transport):
+	"""Scriptable byte :class:`Transport`.
 
 	``events`` is a queue of: ``bytes`` (delivered by one ``recv``), a
 	:data:`TIMEOUT_EVENT` (advances the clock and raises ``TimeoutError``, as a
@@ -118,13 +129,13 @@ class FakeTransport:
 # -- adapter fakes -----------------------------------------------------------
 
 
-class FakeSpeechSource:
+class FakeSpeechSource(SpeechSource):
 	"""In-memory speech/braille capture the test drives directly."""
 
 	def __init__(self, clock: FakeClock) -> None:
 		self._speech = SpeechBuffer(clock)
 		self._braille = BrailleBuffer(clock)
-		self.started_mode: str | None = None
+		self.started = False
 		self.stopped = False
 
 	@property
@@ -135,9 +146,8 @@ class FakeSpeechSource:
 	def braille(self) -> BrailleBuffer:
 		return self._braille
 
-	def start(self, mode: str) -> None:
-		self.started_mode = mode
-		self._speech.exact_finish = mode == p.CaptureMode.SILENT
+	def start(self) -> None:
+		self.started = True
 
 	def stop(self) -> None:
 		self.stopped = True
@@ -154,7 +164,7 @@ class FakeSpeechSource:
 		self._speech.notify_finished()
 
 
-class FakeSynthSwapper:
+class FakeSynthSwapper(SynthSwapper):
 	"""Records swap/restore so tests can assert restoration on every path."""
 
 	def __init__(self, real_synth_name: str = "espeak", *, raise_on_restore: bool = False) -> None:
@@ -183,7 +193,7 @@ class FakeSynthSwapper:
 			raise RuntimeError("simulated restore failure")
 
 
-class FakeGestureSender:
+class FakeGestureSender(GestureSender):
 	"""Records emulated gestures; can reject named ids to test error paths."""
 
 	def __init__(self, *, invalid: set[str] | None = None) -> None:
@@ -194,3 +204,72 @@ class FakeGestureSender:
 		if gesture_id in self._invalid:
 			raise ValueError("unparseable gesture identifier")
 		self.sent.append(gesture_id)
+
+
+class FakeTranscript(Transcript):
+	"""In-memory :class:`Transcript` recording each event as a string line."""
+
+	def __init__(self, path: str = "session.log") -> None:
+		self._path = path
+		self.opened = False
+		self.closed_reason: str | None = None
+		self.lines: list[str] = []
+
+	@property
+	def path(self) -> str:
+		return self._path
+
+	def open(self) -> None:
+		self.opened = True
+
+	def session_opened(self, mode: str, synth: str) -> None:
+		self.lines.append(f"SESSION OPEN mode={mode} synth={synth}")
+
+	def synth_swapped(self, real_synth: str) -> None:
+		self.lines.append(f"SYNTH SWAP saved={real_synth}")
+
+	def synth_restored(self, real_synth: str) -> None:
+		self.lines.append(f"SYNTH RESTORE -> {real_synth}")
+
+	def gesture(self, gesture_id: str) -> None:
+		self.lines.append(f"GESTURE {gesture_id}")
+
+	def speech(self, text: str) -> None:
+		self.lines.append(f"SPEECH {text!r}")
+
+	def note(self, text: str) -> None:
+		self.lines.append(f"NOTE {text}")
+
+	def session_closed(self, reason: str) -> None:
+		self.closed_reason = reason
+		self.lines.append(f"SESSION CLOSE reason={reason}")
+
+
+class FakeAdapterFactory(AdapterFactory):
+	"""Hands back pre-built fakes, configured for the mode the session requests.
+
+	Holds references the test can inspect after the run, and records which mode
+	it was asked to build (the session's decoded ``hello`` mode).
+	"""
+
+	def __init__(
+		self,
+		speech_source: FakeSpeechSource,
+		synth_swapper: FakeSynthSwapper,
+		gesture_sender: FakeGestureSender,
+	) -> None:
+		self.speech_source = speech_source
+		self.synth_swapper = synth_swapper
+		self.gesture_sender = gesture_sender
+		self.built_mode: p.CaptureMode | None = None
+
+	def build(self, mode: p.CaptureMode) -> AdapterSet:
+		self.built_mode = mode
+		# Mode-specific wiring the real factory does at build time: silent mode
+		# gets the exact synthDoneSpeaking finish signal.
+		self.speech_source.speech.exact_finish = mode == p.CaptureMode.SILENT
+		return AdapterSet(
+			speech_source=self.speech_source,
+			synth_swapper=self.synth_swapper,
+			gesture_sender=self.gesture_sender,
+		)

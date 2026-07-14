@@ -1,4 +1,4 @@
-# nvdaMcpBridge -- indexed, thread-safe speech and braille buffers.
+# nvdaMcpBridge domain -- indexed, thread-safe speech and braille buffers.
 # Copyright (C) 2026 Marlon Brandao de Sousa. GPL-2. See COPYING.txt.
 #
 # A stdlib-only port of the buffer half of NVDA's own ``NVDASpyLib``
@@ -21,7 +21,7 @@ import threading
 from typing import TYPE_CHECKING, Any, Callable
 
 if TYPE_CHECKING:
-	from .adapters import Clock
+	from .ports import Clock
 
 #: Live mode has no exact "speech finished" signal, so we treat speech as
 #: finished once this many seconds pass with no new sequence (NVDASpyLib's
@@ -54,11 +54,6 @@ class _IndexedBuffer:
 
 	def _render(self, entry: Any) -> str:
 		raise NotImplementedError
-
-	def _append(self, entry: Any) -> None:
-		with self._lock:
-			self._entries.append(entry)
-			self._last_time = self._clock.monotonic()
 
 	def last_index(self) -> int:
 		"""Index of the most recent entry (0 when only the sentinel is present)."""
@@ -129,7 +124,7 @@ class SpeechBuffer(_IndexedBuffer):
 
 	def __init__(self, clock: Clock, *, exact_finish: bool = False) -> None:
 		super().__init__(clock)
-		#: Flipped by the speech source at ``start(mode)``.
+		#: Set by the speech source per its capture mode.
 		self.exact_finish: bool = exact_finish
 		self._speaking: bool = False
 		self._observer: Callable[[str], None] | None = None

@@ -1,11 +1,11 @@
-# Tests for the session transcript log. Copyright (C) 2026 Marlon Brandao de
-# Sousa. GPL-2. See COPYING.txt.
+# Tests for the file-backed transcript adapter. Copyright (C) 2026 Marlon
+# Brandao de Sousa. GPL-2. See COPYING.txt.
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from nvdaMcpBridge.transcript import TranscriptLog, create_session_log
+from nvdaMcpBridge.adapters.file_transcript import FileTranscript, create_session_log
 
 
 def _fixed_timestamp() -> str:
@@ -13,7 +13,7 @@ def _fixed_timestamp() -> str:
 
 
 def test_transcript_records_events_in_order_flushed_per_line(tmp_path: Path) -> None:
-	log = TranscriptLog(tmp_path / "session.log", timestamp=_fixed_timestamp)
+	log = FileTranscript(tmp_path / "session.log", timestamp=_fixed_timestamp)
 	log.open()
 	log.session_opened("silent", "espeak")
 	log.synth_swapped("espeak")
@@ -33,7 +33,7 @@ def test_transcript_records_events_in_order_flushed_per_line(tmp_path: Path) -> 
 
 
 def test_writes_before_open_are_silently_ignored(tmp_path: Path) -> None:
-	log = TranscriptLog(tmp_path / "session.log", timestamp=_fixed_timestamp)
+	log = FileTranscript(tmp_path / "session.log", timestamp=_fixed_timestamp)
 	# No open() -> no file, no crash.
 	log.gesture("NVDA+f7")
 	assert not (tmp_path / "session.log").exists()

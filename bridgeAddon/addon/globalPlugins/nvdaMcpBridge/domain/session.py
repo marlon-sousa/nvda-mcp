@@ -1,37 +1,39 @@
-# nvdaMcpBridge -- the session state machine.
+# nvdaMcpBridge domain -- the session state machine (the controller).
 # Copyright (C) 2026 Marlon Brandao de Sousa. GPL-2. See COPYING.txt.
 #
 # One accepted socket connection == one session, and this class runs it end to
 # end: the ``hello`` handshake (mode + protocol-version check), the command
 # dispatch loop, the two watchdog timeouts, and -- non-negotiably -- synth
 # restoration on *every* teardown path. It is stdlib-only and driven entirely
-# through the adapter Protocols and the framed :class:`~.framing.Connection`,
-# so the whole thing (including "the client vanished, did we still restore the
-# synth?") is unit-tested headlessly with fakes.
+# through the ports and the framed :class:`~.framing.Connection`, so the whole
+# thing (including "the client vanished, did we still restore the synth?") is
+# unit-tested headlessly with fakes.
+#
+# Mode (silent/live) is only known after ``hello``, so adapters are NOT injected
+# pre-built: an :class:`~.ports.AdapterFactory` port is injected instead, and
+# the session asks it to ``build(mode)`` once the handshake reveals the mode.
 #
 # Timeouts, per the spec:
 #   * heartbeat (30 s): no traffic at all -> assume the harness died, restore.
 #   * command-inactivity (120 s): pings keep coming but no real command -> the
 #     agent forgot the session, restore. Pings prove the process is alive, not
 #     that anyone is still testing.
-# The framed connection hands us :data:`~.framing.TIMEOUT` when the client is
-# merely quiet, which is our cue to check both deadlines against the clock.
 
 from __future__ import annotations
 
+import enum
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable
 
-from . import protocol as p
+from .. import protocol as p
 from .framing import ConnectionClosed, Timeout
 
 if TYPE_CHECKING:
-	from .adapters import Clock, GestureSender, SpeechSource, SynthSwapper
 	from .framing import Connection
-	from .transcript import TranscriptLog
+	from .ports import AdapterFactory, Clock, GestureSender, SpeechSource, SynthSwapper, Transcript
 
 
-class TeardownReason:
+class TeardownReason(enum.Enum):
 	"""Why a session ended -- recorded in the transcript, useful in diagnosis."""
 
 	CLIENT_BYE = "client-bye"
@@ -59,25 +61,26 @@ class Session:
 	def __init__(
 		self,
 		connection: Connection,
-		speech_source: SpeechSource,
-		synth_swapper: SynthSwapper,
-		gesture_sender: GestureSender,
 		clock: Clock,
-		transcript: TranscriptLog,
+		transcript: Transcript,
+		factory: AdapterFactory,
 		*,
 		nvda_version: str,
 		config: SessionConfig | None = None,
 	) -> None:
 		self._conn = connection
-		self._speech = speech_source
-		self._synth = synth_swapper
-		self._gestures = gesture_sender
 		self._clock = clock
 		self._transcript = transcript
+		self._factory = factory
 		self._nvda_version = nvda_version
 		self._config = config or SessionConfig()
 
-		self._mode: str = ""
+		# Bound once the handshake reveals the mode (see _start_session).
+		self._speech: SpeechSource | None = None
+		self._synth: SynthSwapper | None = None
+		self._gestures: GestureSender | None = None
+
+		self._mode: p.CaptureMode | None = None
 		self._started = False
 		now = clock.monotonic()
 		self._last_heartbeat = now
@@ -86,7 +89,7 @@ class Session:
 
 	# -- lifecycle ------------------------------------------------------------
 
-	def run(self) -> str:
+	def run(self) -> TeardownReason:
 		"""Drive the session to completion; returns the :class:`TeardownReason`."""
 		reason = TeardownReason.CLIENT_CLOSED
 		try:
@@ -115,7 +118,7 @@ class Session:
 		if req is None:
 			return False
 		if req.cmd != p.Command.HELLO:
-			self._send_error(req.id, f"expected {p.Command.HELLO!r} first, got {req.cmd!r}")
+			self._send_error(req.id, f"expected {p.Command.HELLO.value!r} first, got {req.cmd!r}")
 			return False
 		try:
 			hello = p.from_dict(p.HelloParams, req.params)
@@ -129,18 +132,16 @@ class Session:
 				f"client sent {hello.protocolVersion}",
 			)
 			return False
-		if hello.mode not in p.CaptureMode.ALL:
-			self._send_error(req.id, f"unknown capture mode {hello.mode!r}")
-			return False
 
 		self._start_session(hello.mode)
+		assert self._synth is not None
 		self._conn.write(
 			p.Response(
 				id=req.id,
 				result=p.HelloResult(
 					protocolVersion=p.PROTOCOL_VERSION,
 					nvdaVersion=self._nvda_version,
-					mode=self._mode,
+					mode=hello.mode,
 					synth=self._synth.real_synth_name,
 					logPath=self._transcript.path,
 				),
@@ -148,8 +149,13 @@ class Session:
 		)
 		return True
 
-	def _start_session(self, mode: str) -> None:
+	def _start_session(self, mode: p.CaptureMode) -> None:
 		self._mode = mode
+		adapters = self._factory.build(mode)
+		self._speech = adapters.speech_source
+		self._synth = adapters.synth_swapper
+		self._gestures = adapters.gesture_sender
+
 		self._transcript.open()
 		# From here on teardown must run in full (close the log, restore the
 		# synth), so mark started before any step that could fail.
@@ -157,14 +163,14 @@ class Session:
 		if mode == p.CaptureMode.SILENT:
 			self._synth.swap_in()
 			self._transcript.synth_swapped(self._synth.real_synth_name)
-		self._speech.start(mode)
+		self._speech.start()
 		self._speech.speech.set_observer(self._transcript.speech)
-		self._transcript.session_opened(mode, self._synth.real_synth_name)
+		self._transcript.session_opened(mode.value, self._synth.real_synth_name)
 		now = self._clock.monotonic()
 		self._last_heartbeat = now
 		self._last_command = now
 
-	def _command_loop(self) -> str:
+	def _command_loop(self) -> TeardownReason:
 		while True:
 			message = self._conn.read_message()
 			if isinstance(message, Timeout):
@@ -183,7 +189,7 @@ class Session:
 				self._last_command = self._clock.monotonic()
 			self._dispatch(req)
 
-	def _check_deadlines(self) -> str | None:
+	def _check_deadlines(self) -> TeardownReason | None:
 		now = self._clock.monotonic()
 		if now - self._last_heartbeat >= self._config.heartbeat_timeout:
 			return TeardownReason.HEARTBEAT_TIMEOUT
@@ -191,7 +197,7 @@ class Session:
 			return TeardownReason.INACTIVITY_TIMEOUT
 		return None
 
-	def _teardown(self, reason: str) -> None:
+	def _teardown(self, reason: TeardownReason) -> None:
 		"""Best-effort cleanup that always attempts synth restore and never raises.
 
 		The synth restore is the one guarantee this whole design exists to make
@@ -200,11 +206,15 @@ class Session:
 		to abort teardown or propagate out of :meth:`run`.
 		"""
 		try:
-			if self._started:
+			if self._started and self._speech is not None:
 				self._speech.speech.set_observer(None)
 				self._speech.stop()
 		except Exception:  # noqa: BLE001 - cleanup must not mask restoration
 			pass
+		if self._synth is None:
+			# Never got past the handshake; nothing was swapped.
+			self._close_conn()
+			return
 		was_swapped = self._synth.swapped
 		try:
 			self._synth.restore()  # idempotent; no-op if never swapped
@@ -215,7 +225,10 @@ class Session:
 			if was_swapped and self._started:
 				self._transcript.synth_restored(self._synth.real_synth_name)
 		if self._started:
-			self._transcript.session_closed(reason)
+			self._transcript.session_closed(reason.value)
+		self._close_conn()
+
+	def _close_conn(self) -> None:
 		try:
 			self._conn.close()
 		except OSError:
@@ -284,6 +297,7 @@ class Session:
 		return handler
 
 	def _press_gesture(self, req: p.Request) -> Any:
+		assert self._gestures is not None
 		params = p.from_dict(p.PressGestureParams, req.params)
 		for gesture_id in params.gestures:
 			try:
@@ -294,27 +308,33 @@ class Session:
 		return p.AckResult()
 
 	def _get_speech(self, req: p.Request) -> Any:
+		assert self._speech is not None
 		params = p.from_dict(p.GetSpeechParams, req.params)
 		text, from_index, to_index = self._speech.speech.get_since(params.sinceIndex)
 		return p.SpeechResult(text=text, fromIndex=from_index, toIndex=to_index)
 
 	def _get_last_speech(self, _req: p.Request) -> Any:
+		assert self._speech is not None
 		text, index = self._speech.speech.get_last()
 		return p.LastSpeechResult(text=text, index=index)
 
 	def _get_next_speech_index(self, _req: p.Request) -> Any:
+		assert self._speech is not None
 		return p.NextIndexResult(index=self._speech.speech.next_index())
 
 	def _wait_for_speech(self, req: p.Request) -> Any:
+		assert self._speech is not None
 		params = p.from_dict(p.WaitForSpeechParams, req.params)
 		found, index, text = self._speech.speech.wait_for(params.text, params.afterIndex, params.timeout)
 		return p.WaitForSpeechResult(found=found, index=index, text=text)
 
 	def _wait_for_speech_to_finish(self, req: p.Request) -> Any:
+		assert self._speech is not None
 		params = p.from_dict(p.WaitToFinishParams, req.params)
 		return p.WaitToFinishResult(finished=self._speech.speech.wait_to_finish(params.timeout))
 
 	def _get_braille(self, req: p.Request) -> Any:
+		assert self._speech is not None
 		params = p.from_dict(p.GetBrailleParams, req.params)
 		text, from_index, to_index = self._speech.braille.get_since(params.sinceIndex)
 		return p.BrailleResult(text=text, fromIndex=from_index, toIndex=to_index)

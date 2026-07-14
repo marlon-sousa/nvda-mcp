@@ -32,6 +32,58 @@ asyncio MCP server.
 | `bridgeAddon/` | The NVDA addon, built with scons. Inert until a session connects. | NVDA's embedded CPython 3.13 |
 | `specs/` | Numbered design specs (RFC-style `NNNN-title.md`). | — |
 
+## Internal architecture — ports & adapters (bridge AND server)
+
+**Both** the bridge addon and the MCP server use the same **hexagonal**
+(ports-and-adapters) design. The bridge's side-effecting edge is NVDA; the
+server's is the MCP/stdio SDK and the TCP socket to the bridge — same shape,
+learn it once.
+
+```
+<package>/
+  __init__.py     # entry point ONLY. The bridge's exposes GlobalPlugin lazily
+                  # via a module-level __getattr__, so importing the package
+                  # does NOT import NVDA (tests import the domain directly).
+  domain/         # PURE core: no NVDA / no MCP SDK / no sockets. Headless-tested.
+    ports.py      #   the abstract interfaces (abc.ABC + @abstractmethod)
+    <controller>.py    #   the state machine / translator
+    ...           #   pure value objects + logic
+  adapters/       # the ONLY place NVDA / the MCP SDK / the OS / real IO lives
+    ...           #   one class per file (private helpers may share the file)
+  wiring.py       # composition root: binds ports→adapters, builds the controller
+```
+
+Bridge (`bridgeAddon/addon/globalPlugins/nvdaMcpBridge/`): `domain/session.py`
+(controller), `domain/speech_buffer.py`, `domain/framing.py`; adapters
+`real_clock.py` now, `nvda_*.py` + `socket_transport.py` in session C;
+`protocol.py` (the synced shared wire module) sits at the package root. Server
+(session D): `domain/` holds the tool translator + a `BridgeClient` port;
+adapters hold the FastMCP/stdio server and the real TCP bridge client.
+
+Rules that keep this honest:
+
+- **Ports are `abc.ABC`s with `@abstractmethod`** (not `Protocol`): an
+  incomplete adapter fails at construction, and the interface itself can't be
+  instantiated. The domain depends only on ports; adapters subclass and
+  implement them; **`wiring.py` is the only place that knows both.**
+- **Mode (silent/live) is only known after `hello`.** Do not build
+  mode-specific adapters up front. `wiring.py` injects an **`AdapterFactory`
+  port**; `Session` reads `hello`, then calls `factory.build(mode)` for the
+  adapter set. No "configure the adapter after constructing it".
+- **Enumerations are `enum`, never class-of-`Final`-constants.** Wire enums
+  (`CaptureMode`, `Command`) are `enum.StrEnum` in `protocol.py` (members are
+  `str`, so JSON stays plain); domain-only enums (`TeardownReason`) are plain
+  `enum.Enum`. `Request.cmd` stays a raw `str` so an unknown command yields a
+  clean error instead of a validation crash.
+- **The NVDA/SDK edge is exempt from the type checker; the domain is not.** We
+  do **not** vendor stubs and do **not** depend on the NVDA source. Instead the
+  side-effecting adapter files (those importing NVDA, plus the bridge's
+  `plugin.py`) are listed in pyright's `ignore`, so their unresolved imports
+  raise nothing. This is safe precisely *because* the domain is pure and fully
+  strict-checked and those thin edge files are validated by the milestone-6
+  live-NVDA integration tests. Keep edge files thin — real logic belongs in the
+  checked domain.
+
 ## Hard invariants — do not break
 
 1. **`shared/nvda_mcp_wire/protocol.py` stays stdlib-only.** It is copied
@@ -48,8 +100,17 @@ asyncio MCP server.
    path restores the user's real synth in a `finally` (a crashed harness must
    never leave a blind user with a mute screen reader).
 4. **Type hints everywhere, enforced by pyright (strict).** CI fails on type
-   errors. The addon type-checks against a sibling `../nvda` 2026.1 source
-   checkout via `extraPaths`.
+   errors. The pure **domain is fully strict-checked; the NVDA/SDK edge is
+   not** — the side-effecting adapter files (and the bridge's `plugin.py`) are
+   in pyright's `ignore` list, so their unresolved NVDA imports raise nothing.
+   There is **no NVDA source dependency and no vendored stubs**; the `../nvda`
+   checkout is a reference for reading real code, nothing more. (The edge is
+   validated by the milestone-6 live-NVDA integration tests.)
+5. **The domain never imports NVDA.** Everything under
+   `nvdaMcpBridge/domain/` (and `protocol.py`) is pure Python, unit-tested
+   headlessly. Only `nvdaMcpBridge/adapters/` may import `speech`,
+   `synthDriverHandler`, `inputCore`, `config`, `api`, `braille`, … If you
+   reach for an NVDA import in the domain, you're on the wrong side of a port.
 
 ## Dev commands
 
@@ -66,8 +127,11 @@ uv run --directory shared pyright
 uv run --directory mcpServer pytest
 uv run --directory mcpServer pyright
 
-# NVDA addon: copy the shared module in, then type-check vs ../nvda source
+# NVDA addon: copy the shared module in, then run headless tests + pyright.
+# No NVDA checkout needed — the domain is pure; the NVDA edge is in pyright's
+# ignore list (no stubs, no source dependency).
 py -3.13 bridgeAddon/sync_shared.py
+uv run --directory bridgeAddon pytest       # headless domain tests
 uv run --directory bridgeAddon pyright
 cd bridgeAddon && scons        # build the .nvda-addon (needs the NVDA build deps)
 ```
@@ -98,4 +162,7 @@ merged code + the spec + this file. See the spec's Milestones section.
   assertions have nothing to match. Use `getState` (browse/focus mode, speech
   mode, sleep, input help) to assert those.
 - **NVDA reference source is `../nvda/source`** (2026.1). Consult it for APIs
-  rather than guessing; only `source/` is needed.
+  rather than guessing; only `source/` is needed. It is a **reference only** —
+  not a build/CI/type-check dependency. Adapter files that import NVDA go in
+  pyright's `ignore` list (see the ports & adapters section); the domain they
+  serve stays fully strict-checked.

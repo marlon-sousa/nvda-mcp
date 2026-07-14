@@ -1,13 +1,14 @@
-# nvdaMcpBridge -- per-session transcript log.
+# nvdaMcpBridge adapters -- the file-backed Transcript.
 # Copyright (C) 2026 Marlon Brandao de Sousa. GPL-2. See COPYING.txt.
 #
-# Silent-mode runs are an audio blackout: nobody hears what NVDA "said". The
-# bridge therefore writes a plain-text transcript per session so the tester can
-# reconstruct the run afterwards -- one timestamped line per event, gestures
-# interleaved with the speech they produced, plus session open/close and the
-# synth swap/restore. It is written bridge-side (so it is complete even if the
-# agent never fetched some speech) and flushed per line (so a crash loses
-# nothing). The ``hello`` response returns the path so the server can surface it.
+# Silent-mode runs are an audio blackout: nobody hears what NVDA "said". This
+# adapter writes the domain's transcript to a plain-text file per session so the
+# tester can reconstruct the run afterwards -- one timestamped line per event,
+# gestures interleaved with the speech they produced, plus session open/close
+# and the synth swap/restore. Written bridge-side (complete even if the agent
+# never fetched some speech) and flushed per line (a crash loses nothing).
+#
+# No NVDA import -- this is pure file IO, so it stays fully type-checked.
 
 from __future__ import annotations
 
@@ -15,6 +16,8 @@ import os
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
+
+from ..domain.ports import Transcript
 
 #: Default number of recent session logs to retain; older ones are pruned.
 DEFAULT_KEEP: int = 20
@@ -24,8 +27,8 @@ def _wallclock() -> str:
 	return datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
 
 
-class TranscriptLog:
-	"""Append-only, line-flushed transcript for one session.
+class FileTranscript(Transcript):
+	"""Append-only, line-flushed :class:`~..domain.ports.Transcript` on disk.
 
 	Timestamps come from an injectable callable (defaulting to wall-clock) so
 	tests get deterministic output. All writers are best-effort: a logging
@@ -92,17 +95,17 @@ def create_session_log(
 	keep: int = DEFAULT_KEEP,
 	timestamp: Callable[[], str] = _wallclock,
 	name_stamp: Callable[[], str] | None = None,
-) -> TranscriptLog:
+) -> FileTranscript:
 	"""Open a fresh ``session-<stamp>.log`` under ``logs_dir``, pruning old ones.
 
 	``name_stamp`` builds the filename component (defaults to a filesystem-safe
 	wall-clock stamp); ``keep`` bounds how many ``session-*.log`` files survive,
-	oldest deleted first. Returns an opened :class:`TranscriptLog`.
+	oldest deleted first. Returns an opened :class:`FileTranscript`.
 	"""
 	directory = Path(logs_dir)
 	directory.mkdir(parents=True, exist_ok=True)
 	stamp = (name_stamp or (lambda: datetime.now().strftime("%Y%m%d-%H%M%S-%f")))()
-	log = TranscriptLog(directory / f"session-{stamp}.log", timestamp=timestamp)
+	log = FileTranscript(directory / f"session-{stamp}.log", timestamp=timestamp)
 	log.open()
 	_prune(directory, keep)
 	return log
