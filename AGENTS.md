@@ -64,12 +64,25 @@ adapters hold the FastMCP/stdio server and the real TCP bridge client.
 
 Rules that keep this honest:
 
-- **Ports are `abc.ABC`s with `@abstractmethod`** (not `Protocol`), **one port
-  per file** under `domain/ports/` (its DTO, e.g. `AdapterSet`, in the same
-  file; `__init__.py` re-exports so callers do `from ..ports import X`): an
+- **Ports are `abc.ABC`s with `@abstractmethod`** (not `Protocol`): an
   incomplete adapter fails at construction, and the interface itself can't be
   instantiated. The domain depends only on ports; adapters subclass and
   implement them; **`wiring.py` is the only place that knows both.**
+- **One interface/class per file.** Each **port** is its own file in
+  `domain/ports/`; each **adapter** is its own file in `adapters/` (a small
+  private helper may share its adapter's file). A **DTO lives in the same file
+  as the port or adapter that owns it** (e.g. `AdapterSet` sits with
+  `AdapterFactory`). `domain/ports/__init__.py` re-exports every port so callers
+  write `from ..ports import X` without caring which file it lives in. This
+  keeps the seam list scannable and diffs small as sessions C–F add adapters.
+- **Test doubles are hand-written stateful fakes** (in `tests/`), one per port,
+  each subclassing its ABC — not `unittest.mock`. The domain drives its
+  collaborators through real protocols (read loops, index reads, state
+  transitions), so the doubles need behaviour, not call-recording; mocks would
+  re-script return values per test and exercise less. Signature/contract drift
+  is already caught by the ABCs (runtime) + pyright strict (CI); behavioural
+  conformance of the *real* adapters is proven by the milestone-6 live-NVDA
+  integration tests, not by the unit doubles.
 - **Mode (silent/live) is only known after `hello`.** Do not build
   mode-specific adapters up front. `wiring.py` injects an **`AdapterFactory`
   port**; `Session` reads `hello`, then calls `factory.build(mode)` for the
