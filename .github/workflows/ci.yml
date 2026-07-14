@@ -51,6 +51,9 @@ jobs:
       - name: Sync shared wire module into addon
         working-directory: nvda-mcp/bridgeAddon
         run: python sync_shared.py
+      - name: Tests (headless bridge core)
+        working-directory: nvda-mcp/bridgeAddon
+        run: uv run --python 3.13 --with pytest pytest -q
       - name: Pyright
         working-directory: nvda-mcp/bridgeAddon
         run: uv run --python 3.13 --with pyright pyright

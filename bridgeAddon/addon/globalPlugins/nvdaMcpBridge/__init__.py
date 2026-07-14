@@ -1,11 +1,16 @@
 # nvdaMcpBridge -- NVDA MCP Bridge global plugin.
 # Copyright (C) 2026 Marlon Brandao de Sousa. GPL-2. See COPYING.txt.
 #
-# SKELETON (milestone 1). This establishes the addon package and loads inertly.
-# The loopback socket server, session state machine, speech/braille capture,
-# gesture input and the fail-safe synth restoration are added in later
-# milestones (sessions B and C). Until then the plugin deliberately does
-# nothing with side effects, so it is safe to install.
+# SKELETON. This establishes the addon package and loads inertly.
+#
+# Session B added the stdlib-only bridge core as sibling modules -- the session
+# state machine (session.py), indexed speech/braille buffers (speech_buffer.py),
+# JSON-lines framing (framing.py), the transcript log (transcript.py) and the
+# adapter interfaces (adapters.py) -- all unit-tested headlessly. This plugin
+# does NOT yet wire them to a live socket or to NVDA: the loopback server, the
+# real NVDA adapters, the spy synth and the panic gesture are session C, which
+# imports NVDA. Until then the plugin deliberately does nothing with side
+# effects, so it is safe to install.
 
 from __future__ import annotations
 

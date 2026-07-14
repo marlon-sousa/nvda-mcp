@@ -1,6 +1,14 @@
 # Bridge (NVDA addon) tooling config. The addon itself is built with scons
 # (see sconstruct); this file only configures the linters/type-checker.
 
+[tool.pytest.ini_options]
+# The bridge core (session B) is stdlib-only and unit-tested headlessly under
+# desktop Python 3.13. tests/conftest.py syncs the shared wire module in, stubs
+# the NVDA modules the inert plugin __init__ imports, and puts the package on
+# sys.path. The shipped addon itself is still type-checked (not run) by pyright
+# against ../nvda/source; only this core logic is exercised by pytest.
+testpaths = ["tests"]
+
 [tool.ruff]
 line-length = 110
 
