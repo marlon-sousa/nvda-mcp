@@ -229,11 +229,16 @@ nvda-mcp/
 
 ## Testing & typing strategy
 
-**Type hints everywhere, enforced in CI (pyright).** The server types against
-the `mcp` SDK. The bridge type-checks against the real NVDA APIs by adding
-the NVDA source checkout to the checker's search path (`extraPaths:
-["../nvda/source"]`; CI uses a shallow sparse checkout of `nvda/source`) —
-future NVDA API breaks then surface as type errors, not runtime surprises.
+**Type hints everywhere, enforced in CI (pyright).** Both halves use the same
+hexagonal split, so the **pure domain is fully strict-checked and the
+side-effecting edge is exempt**: the bridge's NVDA-importing adapters (and
+`plugin.py`) — and, on the server, the MCP-SDK/socket adapters if needed — are
+listed in pyright's `ignore`, so unresolved edge imports raise nothing. There
+is **no NVDA source checkout and no vendored stubs** (the `../nvda` tree stays
+a reference for reading real code). This is safe because the whole domain
+type-checks as pure Python and the thin edge is validated by the milestone-6
+live-NVDA integration tests. Optionally, a non-blocking CI job could later
+type-check the edge against a real sparse `nvda/source` purely to flag drift.
 
 **Shared protocol module is stdlib-only**: dataclasses plus one small
 generic `from_dict` validator (walks `typing.get_type_hints`, clear errors
@@ -260,23 +265,42 @@ must stay stdlib-only.
   that would fail silently: `nvda_do` command ordering (reset → press →
   wait-finish → get), version-mismatch error clarity, index bookkeeping.
 
-**Bridge tests — ports and adapters.** A single `nvda_adapters.py` is the
-only module importing NVDA (`speech`, `synthDriverHandler`, `inputCore`,
-`config`), implementing four narrow interfaces: speech source, synth
-swapper, gesture sender, clock. The **synth swapper** owns not just
-swap/restore but the whole silent-mode defense — `config["speech"]["synth"]`
-agreement, the `config.pre_configSave` guard, and the `getSynthInstance`
-patch / profile-switch survival (see fail-safe restoration). The state
-machine drives its combined restore on every teardown; fakes let us assert
-"after a simulated profile switch, the spy is still active and restore still
-ran" without NVDA. Everything else — indexed speech buffer and
-wait logic, JSON-lines framing, transcript logging, and the **session state
-machine** (handshake, both timeouts, every teardown path → synth restore) —
-is stdlib-only and unit-tested under desktop Python 3.13 (matching NVDA
-2026.1) with injected fakes (fake clock, dropped fake socket ⇒ assert
-restore ran). The adapter file itself is deliberately *not* unit-tested with
-NVDA mocks (false confidence); it is covered by integration tests against a
-real NVDA launched with `-c <profile>` (milestone 6, system-test pattern).
+**Bridge tests — ports and adapters (hexagonal).** The addon is organized as
+domain / ports / adapters / wiring (see AGENTS.md for the layout and rules):
+
+- **`domain/`** is pure and NVDA-free, split by **role** so the path says what a
+  file is: `controllers/` (the `Session` orchestrator — handed its ports, drives
+  the entities), `entities/` (the indexed speech/braille buffers + wait logic),
+  and `ports/` (the `abc.ABC` seams: message channel, speech source, synth
+  swapper, gesture sender, clock, transcript, adapter factory). It is
+  unit-tested headlessly under desktop Python 3.13 (matching NVDA 2026.1) with
+  injected fakes (fake clock, scripted fake channel ⇒ assert restore ran on a
+  dropped connection). Note "pure" ≠ "domain": JSON-lines framing is pure and
+  still lives in an adapter, behind the `MessageChannel` port, so the
+  controller's collaborators are *only* ports.
+- **`adapters/`** is the only place NVDA is imported (`speech`,
+  `synthDriverHandler`, `inputCore`, `config`, `api`, `braille`, …), one class
+  per file. Adapters are **layered** so the untestable surface shrinks to a
+  leaf: an adapter may depend on another only through a seam in
+  `adapters/ports/` (`FileTranscript`→`FileWriter`→`TextFileWriter`;
+  `JsonLinesChannel`→`Transport`→`SocketTransport`). The upper adapter holds
+  every decision and is unit-tested against a fake seam; the leaf just calls the
+  OS. The **synth swapper** owns not just swap/restore but the whole
+  silent-mode defense — `config["speech"]["synth"]` agreement, the
+  `config.pre_configSave` guard, and the `getSynthInstance` patch /
+  profile-switch survival (see fail-safe restoration).
+- **`wiring.py`** is the composition root that binds ports to adapters. Because
+  the capture mode is only known after `hello`, it injects an **`AdapterFactory`
+  port**; the `Session` reads `hello`, then asks the factory to build the
+  mode-specific adapter set (no configure-after-construction). Transcript
+  logging is part of the same wiring.
+
+The state machine drives its combined restore on every teardown path; fakes
+let us assert "after a simulated profile switch, the spy is still active and
+restore still ran" without NVDA. The adapter classes themselves are
+deliberately *not* unit-tested with NVDA mocks (false confidence); they are
+covered by integration tests against a real NVDA launched with `-c <profile>`
+(milestone 6, system-test pattern).
 
 Tests accompany each milestone rather than arriving at the end.
 
