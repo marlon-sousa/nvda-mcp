@@ -19,9 +19,11 @@
 from __future__ import annotations
 
 import dataclasses
+import enum
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import Any, Final, TypeVar, Union, cast, get_args, get_origin, get_type_hints
 
 _T = TypeVar("_T")
@@ -29,6 +31,7 @@ _T = TypeVar("_T")
 
 def _empty_dict() -> dict[str, Any]:
 	return {}
+
 
 __all__ = [
 	"PROTOCOL_VERSION",
@@ -75,53 +78,42 @@ PROTOCOL_VERSION: Final = 1
 DEFAULT_PORT: Final = 8765
 
 
-class CaptureMode:
-	"""Speech-capture modes, chosen per session at ``hello`` time."""
+class CaptureMode(StrEnum):
+	"""Speech-capture modes, chosen per session at ``hello`` time.
+
+	A ``StrEnum`` so members *are* ``str`` — they serialize to plain JSON and
+	compare equal to their wire value — while still giving us a closed set that
+	:func:`from_dict` validates (an unknown mode raises, it is not silently
+	accepted).
+	"""
 
 	#: Bundled spy synth replaces the real synth for the session. Deterministic.
-	SILENT: Final = "silent"
+	SILENT = "silent"
 	#: Hook ``pre_speechQueued``; the real synth keeps talking.
-	LIVE: Final = "live"
-
-	ALL: Final = frozenset({SILENT, LIVE})
+	LIVE = "live"
 
 
-class Command:
-	"""Wire command names (v1)."""
+class Command(StrEnum):
+	"""Wire command names (v1).
 
-	HELLO: Final = "hello"
-	PING: Final = "ping"
-	PRESS_GESTURE: Final = "pressGesture"
-	GET_SPEECH: Final = "getSpeech"
-	GET_LAST_SPEECH: Final = "getLastSpeech"
-	GET_NEXT_SPEECH_INDEX: Final = "getNextSpeechIndex"
-	WAIT_FOR_SPEECH: Final = "waitForSpeech"
-	WAIT_FOR_SPEECH_TO_FINISH: Final = "waitForSpeechToFinish"
-	GET_BRAILLE: Final = "getBraille"
-	GET_FOCUS_INFO: Final = "getFocusInfo"
-	GET_STATE: Final = "getState"
-	GET_CONFIG: Final = "getConfig"
-	SET_CONFIG: Final = "setConfig"
-	BYE: Final = "bye"
+	``StrEnum`` members double as their wire strings, so dispatch tables can be
+	keyed by ``Command`` yet looked up with a raw ``str`` from the wire.
+	"""
 
-	ALL: Final = frozenset(
-		{
-			HELLO,
-			PING,
-			PRESS_GESTURE,
-			GET_SPEECH,
-			GET_LAST_SPEECH,
-			GET_NEXT_SPEECH_INDEX,
-			WAIT_FOR_SPEECH,
-			WAIT_FOR_SPEECH_TO_FINISH,
-			GET_BRAILLE,
-			GET_FOCUS_INFO,
-			GET_STATE,
-			GET_CONFIG,
-			SET_CONFIG,
-			BYE,
-		}
-	)
+	HELLO = "hello"
+	PING = "ping"
+	PRESS_GESTURE = "pressGesture"
+	GET_SPEECH = "getSpeech"
+	GET_LAST_SPEECH = "getLastSpeech"
+	GET_NEXT_SPEECH_INDEX = "getNextSpeechIndex"
+	WAIT_FOR_SPEECH = "waitForSpeech"
+	WAIT_FOR_SPEECH_TO_FINISH = "waitForSpeechToFinish"
+	GET_BRAILLE = "getBraille"
+	GET_FOCUS_INFO = "getFocusInfo"
+	GET_STATE = "getState"
+	GET_CONFIG = "getConfig"
+	SET_CONFIG = "setConfig"
+	BYE = "bye"
 
 
 # --- Generic validator -------------------------------------------------------
@@ -172,9 +164,7 @@ def _coerce(expected: Any, value: Any, path: str) -> Any:
 				return _coerce(arg, value, path)
 			except ValidationError as exc:
 				errors.append(str(exc))
-		raise ValidationError(
-			f"{path}: value {value!r} matched none of {union}: {'; '.join(errors)}"
-		)
+		raise ValidationError(f"{path}: value {value!r} matched none of {union}: {'; '.join(errors)}")
 
 	origin = get_origin(expected)
 	if origin in (list, tuple):
@@ -198,6 +188,14 @@ def _coerce(expected: Any, value: Any, path: str) -> Any:
 			raise ValidationError(f"{path}: expected an object, got {type(value).__name__}")
 		nested = cast("Mapping[str, Any]", value)
 		return from_dict(expected, nested)
+
+	# Enums (incl. ``StrEnum``): coerce the wire value to a member, or reject a
+	# value outside the closed set with a clear message.
+	if isinstance(expected, type) and issubclass(expected, enum.Enum):
+		try:
+			return expected(value)
+		except ValueError as exc:
+			raise ValidationError(f"{path}: {value!r} is not a valid {expected.__name__}") from exc
 
 	# Scalars. ``bool`` is a subclass of ``int`` in Python; keep them distinct
 	# on the wire so a stray ``true`` is never silently read as ``1``.
@@ -248,10 +246,7 @@ def from_dict(cls: type[_T], data: Mapping[str, Any]) -> _T:
 	kwargs: dict[str, Any] = {}
 	for f in dataclasses.fields(cls):
 		if f.name not in data:
-			has_default = (
-				f.default is not dataclasses.MISSING
-				or f.default_factory is not dataclasses.MISSING
-			)
+			has_default = f.default is not dataclasses.MISSING or f.default_factory is not dataclasses.MISSING
 			if has_default:
 				continue
 			raise ValidationError(f"{cls.__name__}: missing required field {f.name!r}")
@@ -318,7 +313,7 @@ class Response:
 
 @dataclass
 class HelloParams:
-	mode: str
+	mode: CaptureMode
 	protocolVersion: int
 
 
@@ -326,7 +321,7 @@ class HelloParams:
 class HelloResult:
 	protocolVersion: int
 	nvdaVersion: str
-	mode: str
+	mode: CaptureMode
 	synth: str
 	logPath: str
 

@@ -22,4 +22,4 @@ def test_server_can_import_shared_wire_contract() -> None:
 	# The whole point of the shared package: the server sees the same contract
 	# the bridge ships. A trivial touch here fails loudly if the path dep breaks.
 	assert PROTOCOL_VERSION == 1
-	assert "hello" in Command.ALL
+	assert Command.HELLO == "hello"

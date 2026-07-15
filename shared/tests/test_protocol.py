@@ -16,7 +16,7 @@ from nvda_mcp_wire import protocol as p
 
 def test_from_dict_simple_scalars() -> None:
 	hp = p.from_dict(p.HelloParams, {"mode": "silent", "protocolVersion": 1})
-	assert hp == p.HelloParams(mode="silent", protocolVersion=1)
+	assert hp == p.HelloParams(mode=p.CaptureMode.SILENT, protocolVersion=1)
 
 
 def test_from_dict_applies_defaults_for_missing_optional_fields() -> None:
@@ -160,9 +160,9 @@ def test_encode_message_is_single_newline_terminated_line() -> None:
 
 
 def test_encode_decode_round_trip() -> None:
-	raw = p.encode_message(p.HelloParams(mode="silent", protocolVersion=1))
+	raw = p.encode_message(p.HelloParams(mode=p.CaptureMode.SILENT, protocolVersion=1))
 	decoded = p.decode_message(raw)
-	assert p.from_dict(p.HelloParams, decoded) == p.HelloParams(mode="silent", protocolVersion=1)
+	assert p.from_dict(p.HelloParams, decoded) == p.HelloParams(mode=p.CaptureMode.SILENT, protocolVersion=1)
 
 
 def test_encode_non_ascii_preserved() -> None:
@@ -202,7 +202,18 @@ def test_default_port() -> None:
 
 
 def test_capture_modes() -> None:
-	assert p.CaptureMode.ALL == {"silent", "live"}
+	assert {m.value for m in p.CaptureMode} == {"silent", "live"}
+
+
+def test_from_dict_coerces_str_to_enum_member() -> None:
+	hp = p.from_dict(p.HelloParams, {"mode": "live", "protocolVersion": 1})
+	assert hp.mode is p.CaptureMode.LIVE
+	assert isinstance(hp.mode, p.CaptureMode)
+
+
+def test_from_dict_rejects_value_outside_the_enum() -> None:
+	with pytest.raises(p.ValidationError, match="not a valid CaptureMode"):
+		p.from_dict(p.HelloParams, {"mode": "shouting", "protocolVersion": 1})
 
 
 def test_command_set_matches_plan_v1() -> None:
@@ -222,14 +233,14 @@ def test_command_set_matches_plan_v1() -> None:
 		"setConfig",
 		"bye",
 	}
-	assert p.Command.ALL == expected
+	assert {c.value for c in p.Command} == expected
 
 
 def test_hello_result_serializes_all_fields() -> None:
 	hr = p.HelloResult(
 		protocolVersion=1,
 		nvdaVersion="2026.1.0",
-		mode="silent",
+		mode=p.CaptureMode.SILENT,
 		synth="oneCore",
 		logPath=r"C:\x\session.log",
 	)
@@ -244,8 +255,14 @@ def test_hello_result_serializes_all_fields() -> None:
 		(p.GetBrailleParams, {"sinceIndex": 3}),
 		(p.WaitToFinishParams, {}),
 		(p.GetConfigParams, {"keyPath": ["speech", "synth"]}),
-		(p.FocusInfoResult, {"name": "OK", "role": "button", "states": [], "value": None, "appModule": "notepad"}),
-		(p.StateResult, {"browseMode": "focus", "speechMode": "talk", "sleepMode": False, "inputHelp": False}),
+		(
+			p.FocusInfoResult,
+			{"name": "OK", "role": "button", "states": [], "value": None, "appModule": "notepad"},
+		),
+		(
+			p.StateResult,
+			{"browseMode": "focus", "speechMode": "talk", "sleepMode": False, "inputHelp": False},
+		),
 		(p.StateResult, {"browseMode": None, "speechMode": "beeps", "sleepMode": True, "inputHelp": False}),
 	],
 )
