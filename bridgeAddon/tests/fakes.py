@@ -1,33 +1,43 @@
-# Fakes implementing the bridge domain ports, for headless tests.
+# Fakes implementing the bridge ports and adapter seams, for headless tests.
 # Copyright (C) 2026 Marlon Brandao de Sousa. GPL-2. See COPYING.txt.
 #
-# Each fake subclasses the corresponding ABC port, so a forgotten method fails
-# here just as it would for the real NVDA adapter. They stand in for NVDA and
-# the socket so the whole session state machine runs deterministically: the
-# clock only advances when told (or on a scripted transport timeout), and the
-# transport replays a scripted sequence of frames, timeouts and EOF while
-# recording every response written back.
+# Each fake subclasses the ABC it stands in for, so a forgotten method fails
+# here exactly as it would for the real NVDA adapter. They are hand-written and
+# STATEFUL rather than mocks, because the code under test drives its
+# collaborators through real protocols (read loops, index reads, state
+# transitions) and asserts on resulting behaviour -- a call-recorder would have
+# to re-script return values per test and would exercise less. See AGENTS.md.
+#
+# Which fake for which test:
+#   FakeChannel     -> the Session controller (scripts whole MESSAGES)
+#   FakeTransport   -> the JsonLinesChannel adapter (scripts raw BYTES)
+#   FakeFileWriter  -> the FileTranscript adapter (records lines, no filesystem)
 
 from __future__ import annotations
 
 from typing import Any, Final
 
 from nvdaMcpBridge import protocol as p
-from nvdaMcpBridge.domain.ports import (
-	AdapterFactory,
-	AdapterSet,
-	Clock,
-	GestureSender,
-	SpeechSource,
-	SynthSwapper,
-	Transcript,
-	Transport,
-)
-from nvdaMcpBridge.domain.speech_buffer import BrailleBuffer, SpeechBuffer
+from nvdaMcpBridge.adapters.ports.file_writer import FileWriter
+from nvdaMcpBridge.adapters.ports.transport import Transport
+from nvdaMcpBridge.domain.entities.braille_buffer import BrailleBuffer
+from nvdaMcpBridge.domain.entities.speech_buffer import SpeechBuffer
+from nvdaMcpBridge.domain.ports.adapter_factory import AdapterFactory, AdapterSet
+from nvdaMcpBridge.domain.ports.clock import Clock
+from nvdaMcpBridge.domain.ports.gesture_sender import GestureSender
+from nvdaMcpBridge.domain.ports.message_channel import TIMEOUT, ChannelClosed, MessageChannel, Timeout
+from nvdaMcpBridge.domain.ports.speech_source import SpeechSource
+from nvdaMcpBridge.domain.ports.synth_swapper import SynthSwapper
+from nvdaMcpBridge.domain.ports.transcript import Transcript
 
 
 class FakeClock(Clock):
-	"""A :class:`Clock` whose time only moves on demand."""
+	"""A :class:`Clock` whose time only moves on demand.
+
+	``sleep`` is an instant advance, which is what lets the domain's wait loops
+	run to their deadline in microseconds. (This is why freezegun/time-machine
+	would not help: they patch the global clock but leave ``time.sleep`` real.)
+	"""
 
 	def __init__(self, start: float = 0.0) -> None:
 		self._now = start
@@ -37,8 +47,6 @@ class FakeClock(Clock):
 		return self._now
 
 	def sleep(self, seconds: float) -> None:
-		# A fake sleep is an instant clock advance -- wait loops make progress
-		# toward their deadline without any real delay.
 		self.sleeps.append(seconds)
 		self._now += seconds
 
@@ -46,30 +54,66 @@ class FakeClock(Clock):
 		self._now += seconds
 
 
-# -- transport ---------------------------------------------------------------
+# -- scripted event queues ---------------------------------------------------
 
 
 class _TimeoutEvent:
 	__slots__ = ()
 
 
-class _EofEvent:
+class _ClosedEvent:
 	__slots__ = ()
 
 
+#: Script entries: "the peer stayed quiet" and "the peer went away".
 TIMEOUT_EVENT: Final = _TimeoutEvent()
-EOF_EVENT: Final = _EofEvent()
+CLOSED_EVENT: Final = _ClosedEvent()
+#: Back-compat alias: at the byte level "closed" arrives as EOF.
+EOF_EVENT: Final = CLOSED_EVENT
 
 
-class FakeTransport(Transport):
-	"""Scriptable byte :class:`Transport`.
+class _ScriptedQueue:
+	"""Shared scripting behaviour for FakeChannel / FakeTransport.
 
-	``events`` is a queue of: ``bytes`` (delivered by one ``recv``), a
-	:data:`TIMEOUT_EVENT` (advances the clock and raises ``TimeoutError``, as a
-	real idle socket does) or an :data:`EOF_EVENT` (``recv`` returns ``b""``).
-	When the queue empties, ``on_empty`` decides the steady state: ``"eof"``
-	(default) closes the connection; ``"timeout"`` keeps timing out and
-	advancing the clock, so a heartbeat/inactivity deadline is eventually hit.
+	``on_empty`` decides the steady state once the script runs out: ``"closed"``
+	ends the session; ``"timeout"`` keeps timing out and advancing the clock, so
+	a heartbeat/inactivity deadline is eventually reached.
+	"""
+
+	def __init__(
+		self,
+		events: list[Any],
+		clock: FakeClock | None,
+		timeout_advance: float,
+		on_empty: str,
+	) -> None:
+		self._events = list(events)
+		self._clock = clock
+		self._timeout_advance = timeout_advance
+		self._on_empty = on_empty
+
+	def next_event(self) -> Any:
+		if self._events:
+			return self._events.pop(0)
+		return TIMEOUT_EVENT if self._on_empty == "timeout" else CLOSED_EVENT
+
+	def tick_timeout(self) -> None:
+		if self._clock is not None:
+			self._clock.advance(self._timeout_advance)
+
+
+class FakeChannel(MessageChannel):
+	"""Scripted :class:`MessageChannel` for testing the Session controller.
+
+	The script is a list of whole messages (dicts), :data:`TIMEOUT_EVENT` and
+	:data:`CLOSED_EVENT` -- no bytes, no JSON. Framing is the JsonLinesChannel
+	adapter's problem and is tested there, which keeps session tests about the
+	session.
+
+	Two extra script entries make interleaving possible: a **callable** is
+	invoked and skipped (use it to make NVDA "speak" at a chosen point mid
+	session), and an **exception instance** is raised (e.g. a ValidationError,
+	standing in for garbage on the wire).
 	"""
 
 	def __init__(
@@ -78,12 +122,57 @@ class FakeTransport(Transport):
 		*,
 		clock: FakeClock | None = None,
 		timeout_advance: float = 5.0,
-		on_empty: str = "eof",
+		on_empty: str = "closed",
 	) -> None:
-		self._events: list[Any] = list(events or [])
-		self._clock = clock
-		self._timeout_advance = timeout_advance
-		self._on_empty = on_empty
+		self._queue = _ScriptedQueue(list(events or []), clock, timeout_advance, on_empty)
+		self.written: list[Any] = []
+		self.closed = False
+
+	def read_message(self) -> dict[str, Any] | Timeout:
+		while True:
+			event = self._queue.next_event()
+			if isinstance(event, _TimeoutEvent):
+				self._queue.tick_timeout()
+				return TIMEOUT
+			if isinstance(event, _ClosedEvent):
+				raise ChannelClosed
+			if isinstance(event, Exception):
+				raise event
+			if callable(event):
+				# A side-effect step: run it and move on to the next event.
+				event()  # pyright: ignore[reportUnknownVariableType]
+				continue
+			assert isinstance(event, dict)
+			return event  # pyright: ignore[reportUnknownVariableType]
+
+	def write(self, message: Any) -> None:
+		self.written.append(message)
+
+	def close(self) -> None:
+		self.closed = True
+
+	def responses(self) -> list[dict[str, Any]]:
+		"""Everything written back, as plain dicts, in order."""
+		return [p.to_dict(m) for m in self.written]
+
+
+class FakeTransport(Transport):
+	"""Scripted byte :class:`Transport` for testing the JsonLinesChannel adapter.
+
+	The script is raw ``bytes`` chunks (split them to exercise reassembly),
+	:data:`TIMEOUT_EVENT` (advances the clock and raises ``TimeoutError``, as a
+	real idle socket does) and :data:`CLOSED_EVENT` (``recv`` returns ``b""``).
+	"""
+
+	def __init__(
+		self,
+		events: list[Any] | None = None,
+		*,
+		clock: FakeClock | None = None,
+		timeout_advance: float = 5.0,
+		on_empty: str = "closed",
+	) -> None:
+		self._queue = _ScriptedQueue(list(events or []), clock, timeout_advance, on_empty)
 		self.outbox = bytearray()
 		self.closed = False
 
@@ -93,7 +182,7 @@ class FakeTransport(Transport):
 		requests: list[dict[str, Any]],
 		*,
 		clock: FakeClock | None = None,
-		on_empty: str = "eof",
+		on_empty: str = "closed",
 		timeout_advance: float = 5.0,
 	) -> FakeTransport:
 		"""Build a transport that delivers each request dict as one wire frame."""
@@ -101,18 +190,14 @@ class FakeTransport(Transport):
 		return cls(events, clock=clock, on_empty=on_empty, timeout_advance=timeout_advance)
 
 	def recv(self) -> bytes:
-		event = self._events.pop(0) if self._events else self._empty_event()
+		event = self._queue.next_event()
 		if isinstance(event, _TimeoutEvent):
-			if self._clock is not None:
-				self._clock.advance(self._timeout_advance)
+			self._queue.tick_timeout()
 			raise TimeoutError
-		if isinstance(event, _EofEvent):
+		if isinstance(event, _ClosedEvent):
 			return b""
 		assert isinstance(event, (bytes, bytearray))
 		return bytes(event)
-
-	def _empty_event(self) -> Any:
-		return TIMEOUT_EVENT if self._on_empty == "timeout" else EOF_EVENT
 
 	def sendall(self, data: bytes) -> None:
 		self.outbox.extend(data)
@@ -126,7 +211,33 @@ class FakeTransport(Transport):
 		return [p.decode_message(line) for line in lines if line]
 
 
-# -- adapter fakes -----------------------------------------------------------
+# -- adapter-seam fakes ------------------------------------------------------
+
+
+class FakeFileWriter(FileWriter):
+	"""In-memory :class:`FileWriter`: lets the transcript test assert exact lines."""
+
+	def __init__(self, path: str = "session.log") -> None:
+		self._path = path
+		self.lines: list[str] = []
+		self.opened = False
+		self.closed = False
+
+	@property
+	def path(self) -> str:
+		return self._path
+
+	def open(self) -> None:
+		self.opened = True
+
+	def write_line(self, text: str) -> None:
+		self.lines.append(text)
+
+	def close(self) -> None:
+		self.closed = True
+
+
+# -- domain-port fakes -------------------------------------------------------
 
 
 class FakeSpeechSource(SpeechSource):

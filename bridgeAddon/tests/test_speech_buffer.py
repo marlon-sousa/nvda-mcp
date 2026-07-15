@@ -5,7 +5,8 @@ from __future__ import annotations
 
 from fakes import FakeClock
 
-from nvdaMcpBridge.domain.speech_buffer import SPEECH_FINISHED_SECONDS, BrailleBuffer, SpeechBuffer
+from nvdaMcpBridge.domain.entities.braille_buffer import BrailleBuffer
+from nvdaMcpBridge.domain.entities.speech_buffer import SPEECH_FINISHED_SECONDS, SpeechBuffer
 
 
 def _speech(clock: FakeClock, *, exact: bool = False) -> SpeechBuffer:

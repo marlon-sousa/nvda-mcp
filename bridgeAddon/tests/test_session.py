@@ -1,6 +1,10 @@
-# Tests for the session state machine, driven end to end through wiring.serve()
-# with fake adapters + a scripted transport. Copyright (C) 2026 Marlon Brandao
-# de Sousa. GPL-2. See COPYING.txt.
+# Tests for the Session controller, driven end to end through wiring.serve()
+# with fake ports. Copyright (C) 2026 Marlon Brandao de Sousa. GPL-2.
+#
+# These script whole MESSAGES against a FakeChannel: framing and JSON are the
+# JsonLinesChannel adapter's job and are tested in test_json_lines_channel.py,
+# so these tests stay about what the session actually decides -- handshake,
+# dispatch, the two watchdogs, and synth restoration on every teardown path.
 
 from __future__ import annotations
 
@@ -10,17 +14,17 @@ from typing import Any, Callable
 from fakes import (
 	TIMEOUT_EVENT,
 	FakeAdapterFactory,
+	FakeChannel,
 	FakeClock,
 	FakeGestureSender,
 	FakeSpeechSource,
 	FakeSynthSwapper,
 	FakeTranscript,
-	FakeTransport,
 )
 
 from nvdaMcpBridge import protocol as p
 from nvdaMcpBridge import wiring
-from nvdaMcpBridge.domain.session import SessionConfig, TeardownReason
+from nvdaMcpBridge.domain.controllers.session import SessionConfig, TeardownReason
 
 NVDA_VERSION = "2026.1.0"
 
@@ -34,18 +38,19 @@ class Ran:
 	sender: FakeGestureSender
 	transcript: FakeTranscript
 	factory: FakeAdapterFactory
+	channel: FakeChannel
 
 
 def run_session(
-	requests: list[dict[str, Any]],
+	messages: list[Any],
 	*,
 	clock: FakeClock | None = None,
 	swapper: FakeSynthSwapper | None = None,
 	sender: FakeGestureSender | None = None,
 	config: SessionConfig | None = None,
-	on_empty: str = "eof",
+	on_empty: str = "closed",
+	timeout_advance: float = 5.0,
 	prepare: Callable[[FakeSpeechSource], None] | None = None,
-	transport: FakeTransport | None = None,
 ) -> Ran:
 	clock = clock or FakeClock()
 	source = FakeSpeechSource(clock)
@@ -55,16 +60,16 @@ def run_session(
 		prepare(source)
 	factory = FakeAdapterFactory(source, swapper, sender)
 	transcript = FakeTranscript()
-	transport = transport or FakeTransport.scripted(requests, clock=clock, on_empty=on_empty)
+	channel = FakeChannel(messages, clock=clock, on_empty=on_empty, timeout_advance=timeout_advance)
 	reason = wiring.serve(
-		transport,
+		channel,
 		clock=clock,
 		transcript=transcript,
 		factory=factory,
 		nvda_version=NVDA_VERSION,
 		config=config,
 	)
-	return Ran(reason, transport.responses(), source, swapper, sender, transcript, factory)
+	return Ran(reason, channel.responses(), source, swapper, sender, transcript, factory, channel)
 
 
 def _hello(mode: str = "silent", version: int = p.PROTOCOL_VERSION) -> dict[str, Any]:
@@ -133,10 +138,11 @@ def test_bye_restores_synth_and_closes_transcript() -> None:
 	assert ran.swapper.swapped is False
 	assert "SYNTH RESTORE -> espeak" in ran.transcript.lines
 	assert ran.transcript.closed_reason == "client-bye"
+	assert ran.channel.closed is True
 
 
 def test_client_disconnect_still_restores_synth() -> None:
-	# No bye; the transport hits EOF straight after the handshake.
+	# No bye; the channel reports closed straight after the handshake.
 	ran = run_session([_hello("silent")])
 	assert ran.reason is TeardownReason.CLIENT_CLOSED
 	assert ran.swapper.restore_count == 1
@@ -156,10 +162,8 @@ def test_restore_failure_is_contained_and_still_logged() -> None:
 
 
 def test_heartbeat_timeout_when_client_goes_silent() -> None:
-	clock = FakeClock()
 	ran = run_session(
 		[_hello("silent")],
-		clock=clock,
 		config=SessionConfig(heartbeat_timeout=30.0, inactivity_timeout=120.0),
 		on_empty="timeout",
 	)
@@ -169,27 +173,20 @@ def test_heartbeat_timeout_when_client_goes_silent() -> None:
 
 def test_inactivity_timeout_fires_even_though_pings_keep_heartbeat_alive() -> None:
 	# Heartbeat effectively disabled; a ping refreshes the heartbeat but not the
-	# command-activity clock, so inactivity must still fire.
-	clock = FakeClock()
-	transport = FakeTransport(
+	# command-activity clock, so inactivity must still fire -- and it fires on
+	# schedule from the handshake, proving the ping did not defer it.
+	ran = run_session(
 		[
-			p.encode_message(_hello("live")),
+			_hello("live"),
 			TIMEOUT_EVENT,  # t=+4
-			p.encode_message({"id": 2, "cmd": "ping"}),  # refreshes heartbeat only
+			{"id": 2, "cmd": "ping"},  # refreshes heartbeat only
 			TIMEOUT_EVENT,  # t=+8
 		],
-		clock=clock,
+		config=SessionConfig(heartbeat_timeout=10_000.0, inactivity_timeout=10.0),
 		on_empty="timeout",
 		timeout_advance=4.0,
 	)
-	ran = run_session(
-		[],
-		clock=clock,
-		config=SessionConfig(heartbeat_timeout=10_000.0, inactivity_timeout=10.0),
-		transport=transport,
-	)
 	assert ran.reason is TeardownReason.INACTIVITY_TIMEOUT
-	# The ping was answered before inactivity closed the session.
 	assert {"id": 2, "result": {"ok": True}, "error": None} in ran.responses
 
 
@@ -222,6 +219,32 @@ def test_bad_gesture_reports_error_after_sending_the_good_ones() -> None:
 	)
 	assert ran.sender.sent == ["NVDA+f7"]
 	assert "bad gesture 'bogus+key'" in ran.responses[1]["error"]["message"]
+
+
+def test_captured_speech_reaches_the_transcript_unfetched() -> None:
+	# The session wires the speech buffer's observer to the Transcript port, so
+	# speech NVDA emits mid-session is recorded bridge-side even though the agent
+	# never asked for it. The callable script entry is NVDA speaking mid-run.
+	holder: list[FakeSpeechSource] = []
+	ran = run_session(
+		[
+			_hello("live"),
+			lambda: holder[0].emit_speech("Find ", "dialog"),
+			{"id": 2, "cmd": "bye"},
+		],
+		prepare=holder.append,
+	)
+	assert "SPEECH 'Find dialog'" in ran.transcript.lines
+
+
+def test_speech_captured_before_the_session_is_not_transcribed() -> None:
+	# The observer is only wired for the session's lifetime, so earlier chatter
+	# stays in the buffer but never lands in this session's transcript.
+	ran = run_session(
+		[_hello("live"), {"id": 2, "cmd": "bye"}],
+		prepare=lambda s: s.emit_speech("earlier chatter"),
+	)
+	assert not any("earlier chatter" in line for line in ran.transcript.lines)
 
 
 def test_speech_reads_reflect_the_buffer() -> None:
@@ -299,3 +322,20 @@ def test_malformed_frame_is_reported_and_the_loop_continues() -> None:
 	# The session kept going and answered the following ping.
 	assert ran.responses[2] == {"id": 3, "result": {"ok": True}, "error": None}
 	assert ran.reason is TeardownReason.CLIENT_BYE
+
+
+def test_unreadable_message_is_reported_and_the_loop_continues() -> None:
+	# Garbage bytes surface as ValidationError out of the channel. That must not
+	# take the session down (and so must never skip the synth restore).
+	ran = run_session(
+		[
+			_hello("silent"),
+			p.ValidationError("malformed JSON line: boom"),
+			{"id": 3, "cmd": "ping"},
+			{"id": 4, "cmd": "bye"},
+		],
+	)
+	assert "unreadable message" in ran.responses[1]["error"]["message"]
+	assert ran.responses[2] == {"id": 3, "result": {"ok": True}, "error": None}
+	assert ran.reason is TeardownReason.CLIENT_BYE
+	assert ran.swapper.restore_count == 1

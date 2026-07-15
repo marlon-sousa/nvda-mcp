@@ -1,23 +1,25 @@
-# nvdaMcpBridge domain -- the session state machine (the controller).
+# nvdaMcpBridge domain -- Session: the session orchestrator.
 # Copyright (C) 2026 Marlon Brandao de Sousa. GPL-2. See COPYING.txt.
 #
-# One accepted socket connection == one session, and this class runs it end to
-# end: the ``hello`` handshake (mode + protocol-version check), the command
-# dispatch loop, the two watchdog timeouts, and -- non-negotiably -- synth
-# restoration on *every* teardown path. It is stdlib-only and driven entirely
-# through the ports and the framed :class:`~.framing.Connection`, so the whole
-# thing (including "the client vanished, did we still restore the synth?") is
-# unit-tested headlessly with fakes.
+# ROLE: THE controller. One accepted connection == one Session, run end to end.
+# CONSTRUCTED BY: wiring.py, which hands it the ports below and nothing else.
+# DEPENDS ON (all ports): MessageChannel (its only I/O), Clock (deadlines),
+#   Transcript (the human-readable record), AdapterFactory (see mode, below).
+# DRIVES (entities): SpeechBuffer / BrailleBuffer, reached via the SpeechSource
+#   port the factory builds.
 #
-# Mode (silent/live) is only known after ``hello``, so adapters are NOT injected
-# pre-built: an :class:`~.ports.AdapterFactory` port is injected instead, and
-# the session asks it to ``build(mode)`` once the handshake reveals the mode.
-#
-# Timeouts, per the spec:
-#   * heartbeat (30 s): no traffic at all -> assume the harness died, restore.
-#   * command-inactivity (120 s): pings keep coming but no real command -> the
-#     agent forgot the session, restore. Pings prove the process is alive, not
-#     that anyone is still testing.
+# What it orchestrates:
+#   1. handshake  -- read `hello`, check protocol version + mode.
+#   2. build      -- mode is ONLY known after `hello`, so adapters are not
+#                    injected pre-built: the AdapterFactory port is, and we ask
+#                    it to build(mode). No configure-after-construction.
+#   3. dispatch   -- one handler per wire command, answering from the entities.
+#   4. watchdogs  -- heartbeat (no traffic at all -> harness died) and
+#                    command-inactivity (pings arrive but nobody is testing;
+#                    a ping proves the process lives, not that anyone is using
+#                    it). Either expiring ends the session.
+#   5. teardown   -- ALWAYS restores the synth, on every path. This is the one
+#                    guarantee the whole design exists to make.
 
 from __future__ import annotations
 
@@ -25,12 +27,17 @@ import enum
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable
 
-from .. import protocol as p
-from .framing import ConnectionClosed, Timeout
+from ... import protocol as p
+from ..ports.message_channel import ChannelClosed, Timeout
 
 if TYPE_CHECKING:
-	from .framing import Connection
-	from .ports import AdapterFactory, Clock, GestureSender, SpeechSource, SynthSwapper, Transcript
+	from ..ports.adapter_factory import AdapterFactory
+	from ..ports.clock import Clock
+	from ..ports.gesture_sender import GestureSender
+	from ..ports.message_channel import MessageChannel
+	from ..ports.speech_source import SpeechSource
+	from ..ports.synth_swapper import SynthSwapper
+	from ..ports.transcript import Transcript
 
 
 class TeardownReason(enum.Enum):
@@ -56,11 +63,11 @@ class _WireError(Exception):
 
 
 class Session:
-	"""Runs one bridge session over a framed connection until teardown."""
+	"""Runs one bridge session over a message channel until teardown."""
 
 	def __init__(
 		self,
-		connection: Connection,
+		channel: MessageChannel,
 		clock: Clock,
 		transcript: Transcript,
 		factory: AdapterFactory,
@@ -68,7 +75,7 @@ class Session:
 		nvda_version: str,
 		config: SessionConfig | None = None,
 	) -> None:
-		self._conn = connection
+		self._channel = channel
 		self._clock = clock
 		self._transcript = transcript
 		self._factory = factory
@@ -96,7 +103,7 @@ class Session:
 			if not self._handshake():
 				return TeardownReason.PROTOCOL_ERROR
 			reason = self._command_loop()
-		except ConnectionClosed:
+		except ChannelClosed:
 			reason = TeardownReason.CLIENT_CLOSED
 		except OSError:
 			reason = TeardownReason.TRANSPORT_ERROR
@@ -135,7 +142,7 @@ class Session:
 
 		self._start_session(hello.mode)
 		assert self._synth is not None
-		self._conn.write(
+		self._channel.write(
 			p.Response(
 				id=req.id,
 				result=p.HelloResult(
@@ -172,7 +179,9 @@ class Session:
 
 	def _command_loop(self) -> TeardownReason:
 		while True:
-			message = self._conn.read_message()
+			message = self._read_or_report()
+			if message is None:
+				continue
 			if isinstance(message, Timeout):
 				expired = self._check_deadlines()
 				if expired is not None:
@@ -213,7 +222,7 @@ class Session:
 			pass
 		if self._synth is None:
 			# Never got past the handshake; nothing was swapped.
-			self._close_conn()
+			self._close_channel()
 			return
 		was_swapped = self._synth.swapped
 		try:
@@ -226,20 +235,36 @@ class Session:
 				self._transcript.synth_restored(self._synth.real_synth_name)
 		if self._started:
 			self._transcript.session_closed(reason.value)
-		self._close_conn()
+		self._close_channel()
 
-	def _close_conn(self) -> None:
+	def _close_channel(self) -> None:
 		try:
-			self._conn.close()
+			self._channel.close()
 		except OSError:
 			pass
 
 	# -- reading helpers ------------------------------------------------------
 
+	def _read_or_report(self) -> dict[str, Any] | Timeout | None:
+		"""Read one message, turning an unreadable one into an error response.
+
+		A client that sends garbage bytes must not take the session down with it
+		(and must certainly not skip the synth restore), so an unreadable frame
+		is reported and the loop continues. ``None`` means "reported, carry on".
+		"""
+		try:
+			return self._channel.read_message()
+		except p.ValidationError as exc:
+			# Unparseable: there is no id to correlate against.
+			self._send_error(0, f"unreadable message: {exc}")
+			return None
+
 	def _await_message(self) -> dict[str, Any] | None:
 		"""Block for the first frame, honouring the heartbeat deadline."""
 		while True:
-			message = self._conn.read_message()
+			message = self._read_or_report()
+			if message is None:
+				return None
 			if not isinstance(message, Timeout):
 				return message
 			now = self._clock.monotonic()
@@ -342,7 +367,7 @@ class Session:
 	# -- writing helpers ------------------------------------------------------
 
 	def _send_result(self, request_id: int, result: Any) -> None:
-		self._conn.write(p.Response(id=request_id, result=result))
+		self._channel.write(p.Response(id=request_id, result=result))
 
 	def _send_error(self, request_id: int, message: str) -> None:
-		self._conn.write(p.Response(id=request_id, error=p.ErrorInfo(message=message)))
+		self._channel.write(p.Response(id=request_id, error=p.ErrorInfo(message=message)))

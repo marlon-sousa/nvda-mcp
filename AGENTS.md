@@ -39,42 +39,87 @@ asyncio MCP server.
 server's is the MCP/stdio SDK and the TCP socket to the bridge — same shape,
 learn it once.
 
+**Every class has exactly one of four roles.** This is the vocabulary — if you
+cannot name a new class's role, it is in the wrong place:
+
+| Role | Lives in | What it is |
+|---|---|---|
+| **port** | `domain/ports/` | An `abc.ABC` the domain needs from the outside world. |
+| **controller** | `domain/controllers/` | An orchestrator. Handed the ports it needs by `wiring.py`; runs a whole use case, driving entities and calling out through ports. **The answer to "who connects what".** |
+| **entity** | `domain/entities/` | A stateful thing the app reasons about. Pure — never does IO. |
+| **adapter** | `adapters/` | A concrete implementation of a port. The only place NVDA / the MCP SDK / the OS / real IO lives. |
+
+"Pure Python" does **not** mean "domain". JSON-lines framing is pure and still
+belongs in an adapter, because it is none of the three domain roles — it lives
+behind the `MessageChannel` port, so the Session's collaborators are *only*
+ports.
+
 ```
 <package>/
   __init__.py     # entry point ONLY. The bridge's exposes GlobalPlugin lazily
                   # via a module-level __getattr__, so importing the package
                   # does NOT import NVDA (tests import the domain directly).
-  domain/         # PURE core: no NVDA / no MCP SDK / no sockets. Headless-tested.
-    ports/        #   the abstract interfaces, ONE PORT PER FILE (abc.ABC +
-                  #   @abstractmethod); a port's own DTO lives in its file;
-                  #   __init__.py re-exports them all
-    <controller>.py    #   the state machine / translator
-    ...           #   pure value objects + logic
+  domain/         # PURE core: no NVDA / no MCP SDK / no sockets / no JSON.
+    ports/        #   ONE PORT PER FILE (abc.ABC + @abstractmethod); a port's own
+                  #   DTO / signalling types live in its file. No re-exports.
+    controllers/  #   the orchestrators, one per file
+    entities/     #   the pure stateful model, one class per file
   adapters/       # the ONLY place NVDA / the MCP SDK / the OS / real IO lives
+    ports/        #   seams BETWEEN adapters (the domain never sees these)
     ...           #   one class per file (private helpers may share the file)
-  wiring.py       # composition root: binds ports→adapters, builds the controller
+  wiring.py       # composition root: picks adapters, stacks them, hands the
+                  # controller its ports. Stays PURE so it is type-checked.
 ```
 
-Bridge (`bridgeAddon/addon/globalPlugins/nvdaMcpBridge/`): `domain/session.py`
-(controller), `domain/speech_buffer.py`, `domain/framing.py`; adapters
-`real_clock.py` now, `nvda_*.py` + `socket_transport.py` in session C;
-`protocol.py` (the synced shared wire module) sits at the package root. Server
-(session D): `domain/` holds the tool translator + a `BridgeClient` port;
-adapters hold the FastMCP/stdio server and the real TCP bridge client.
+Bridge (`bridgeAddon/addon/globalPlugins/nvdaMcpBridge/`):
+`domain/controllers/session.py`; entities `speech_buffer.py` /
+`braille_buffer.py`; adapters `json_lines_channel.py`, `file_transcript.py`,
+`text_file_writer.py`, `real_clock.py`, with `nvda_*.py` + `socket_transport.py`
+in session C. `protocol.py` (the synced shared wire module) sits at the package
+root, and `plugin.py` is the NVDA edge. Server (session D): `domain/` holds the
+tool translator + a `BridgeClient` port; adapters hold the FastMCP/stdio server
+and the real TCP bridge client.
 
 Rules that keep this honest:
+
+- **Every module header states its ROLE and its relationships**, not just what
+  the code does: which port it implements, what it depends on, who builds it,
+  who uses it. If a reader has to ask "what is this class for and who connects
+  it?", the header has failed — that question is the review test.
+- **Adapters are LAYERED so the untestable part shrinks to a leaf.** An adapter
+  may depend on another adapter, but only through a seam in `adapters/ports/` —
+  never on a concrete adapter. The upper adapter holds every decision and is
+  unit-tested against a fake seam; the **leaf** makes no decisions and does
+  nothing but call the OS, so there is nothing to unit-test in it:
+
+  | Decisions (tested vs a fake) | Seam | Leaf (untestable, ~15 lines) |
+  |---|---|---|
+  | `FileTranscript` — transcript vocabulary | `FileWriter` | `TextFileWriter` — real `open`/`write` |
+  | `JsonLinesChannel` — framing + encode | `Transport` | `SocketTransport` — real socket |
+
+  If you are tempted to put a decision in a leaf, it belongs one layer up.
 
 - **Ports are `abc.ABC`s with `@abstractmethod`** (not `Protocol`): an
   incomplete adapter fails at construction, and the interface itself can't be
   instantiated. The domain depends only on ports; adapters subclass and
   implement them; **`wiring.py` is the only place that knows both.**
-- **One interface/class per file.** Each **port** is its own file in
-  `domain/ports/`; each **adapter** is its own file in `adapters/` (a small
-  private helper may share its adapter's file). A **DTO lives in the same file
-  as the port or adapter that owns it** (e.g. `AdapterSet` sits with
-  `AdapterFactory`). `domain/ports/__init__.py` re-exports every port so callers
-  write `from ..ports import X` without caring which file it lives in. This
-  keeps the seam list scannable and diffs small as sessions C–F add adapters.
+- **One interface/class per file, and NO re-export facades.** Each port,
+  controller, entity and adapter is its own file; a small private helper may
+  share its owner's file (e.g. `_LineReader` inside `json_lines_channel.py`). A
+  **DTO or signalling type lives in the same file as the port/adapter that owns
+  it** (`AdapterSet` with `AdapterFactory`; `Timeout`/`ChannelClosed` with
+  `MessageChannel`). Import each from its own file
+  (`from ..ports.clock import Clock`) — the `__init__.py` files carry
+  documentation, never re-exports, so every import names its file and a module's
+  dependencies are exactly the ports it lists.
+- **No DI container library.** `wiring.py` read top-to-bottom *is* the answer to
+  "who connects what"; annotation-driven auto-wiring hides that graph and turns
+  compile-time wiring errors into runtime ones inside NVDA. `dependency-injector`
+  is additionally disqualified: it is Cython-compiled and ships platform wheels
+  (the `pydantic-core` objection), and any third-party lib risks a collision in
+  NVDA's shared `sys.modules`. If wiring ever gets genuinely hard to follow,
+  promote it to an explicit hand-written `container.py` of factory functions —
+  same central place, zero dependencies, still checked by pyright.
 - **Test doubles are hand-written stateful fakes** (in `tests/`), one per port,
   each subclassing its ABC — not `unittest.mock`. The domain drives its
   collaborators through real protocols (read loops, index reads, state

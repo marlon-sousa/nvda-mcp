@@ -1,23 +1,33 @@
-# nvdaMcpBridge adapters -- the file-backed Transcript.
+# nvdaMcpBridge adapters -- FileTranscript: the Transcript vocabulary.
 # Copyright (C) 2026 Marlon Brandao de Sousa. GPL-2. See COPYING.txt.
 #
-# Silent-mode runs are an audio blackout: nobody hears what NVDA "said". This
-# adapter writes the domain's transcript to a plain-text file per session so the
-# tester can reconstruct the run afterwards -- one timestamped line per event,
-# gestures interleaved with the speech they produced, plus session open/close
-# and the synth swap/restore. Written bridge-side (complete even if the agent
-# never fetched some speech) and flushed per line (a crash loses nothing).
+# ROLE: adapter. IMPLEMENTS the Transcript domain port.
+# DEPENDS ON: the FileWriter adapter seam (adapters/ports/file_writer.py) --
+#             never on `open()` directly, which is what makes this precisely
+#             testable: its test asserts the exact lines produced, with a fake
+#             writer and no filesystem.
+# USED BY: the Session controller (through the port).
+# BUILT BY: wiring / create_session_log (which pairs it with a TextFileWriter).
 #
-# No NVDA import -- this is pure file IO, so it stays fully type-checked.
+# Silent-mode runs are an audio blackout: nobody hears what NVDA "said". So the
+# bridge records one timestamped line per event -- gestures interleaved with the
+# speech they produced, plus session open/close and the synth swap/restore --
+# written bridge-side (complete even if the agent never fetched some speech).
+#
+# Everything here is a formatting decision. The IO lives one layer down.
 
 from __future__ import annotations
 
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 
-from ..domain.ports import Transcript
+from ..domain.ports.transcript import Transcript
+from .text_file_writer import TextFileWriter
+
+if TYPE_CHECKING:
+	from .ports.file_writer import FileWriter
 
 #: Default number of recent session logs to retain; older ones are pruned.
 DEFAULT_KEEP: int = 20
@@ -28,37 +38,31 @@ def _wallclock() -> str:
 
 
 class FileTranscript(Transcript):
-	"""Append-only, line-flushed :class:`~..domain.ports.Transcript` on disk.
+	"""Turns session events into timestamped transcript lines.
 
 	Timestamps come from an injectable callable (defaulting to wall-clock) so
-	tests get deterministic output. All writers are best-effort: a logging
-	failure must never take down a session (and certainly never block synth
-	restoration), so write errors are swallowed after the file is opened.
+	tests get deterministic output.
 	"""
 
-	def __init__(self, path: str | os.PathLike[str], *, timestamp: Callable[[], str] = _wallclock) -> None:
-		self._path = Path(path)
+	def __init__(self, writer: FileWriter, *, timestamp: Callable[[], str] = _wallclock) -> None:
+		self._writer = writer
 		self._timestamp = timestamp
-		self._file: object | None = None
+		self._open = False
 
 	@property
 	def path(self) -> str:
-		return str(self._path)
+		return self._writer.path
 
 	def open(self) -> None:
-		"""Create/truncate the log file and ready it for line-buffered writes."""
-		self._path.parent.mkdir(parents=True, exist_ok=True)
-		self._file = open(self._path, "w", encoding="utf-8", buffering=1)
+		self._writer.open()
+		self._open = True
 
 	def _line(self, text: str) -> None:
-		f = self._file
-		if f is None:
+		# Events before open() are dropped rather than buffered: there is no
+		# session yet, so there is nothing a reader would want them attached to.
+		if not self._open:
 			return
-		try:
-			f.write(f"{self._timestamp()} {text}\n")  # type: ignore[attr-defined]
-			f.flush()  # type: ignore[attr-defined]
-		except OSError:
-			pass
+		self._writer.write_line(f"{self._timestamp()} {text}")
 
 	def session_opened(self, mode: str, synth: str) -> None:
 		self._line(f"SESSION OPEN mode={mode} synth={synth}")
@@ -80,13 +84,8 @@ class FileTranscript(Transcript):
 
 	def session_closed(self, reason: str) -> None:
 		self._line(f"SESSION CLOSE reason={reason}")
-		f = self._file
-		self._file = None
-		if f is not None:
-			try:
-				f.close()  # type: ignore[attr-defined]
-			except OSError:
-				pass
+		self._open = False
+		self._writer.close()
 
 
 def create_session_log(
@@ -96,19 +95,20 @@ def create_session_log(
 	timestamp: Callable[[], str] = _wallclock,
 	name_stamp: Callable[[], str] | None = None,
 ) -> FileTranscript:
-	"""Open a fresh ``session-<stamp>.log`` under ``logs_dir``, pruning old ones.
+	"""Compose a transcript over a fresh ``session-<stamp>.log``, pruning old ones.
 
+	The one place that picks the concrete TextFileWriter for a real session.
 	``name_stamp`` builds the filename component (defaults to a filesystem-safe
 	wall-clock stamp); ``keep`` bounds how many ``session-*.log`` files survive,
-	oldest deleted first. Returns an opened :class:`FileTranscript`.
+	oldest deleted first.
 	"""
 	directory = Path(logs_dir)
 	directory.mkdir(parents=True, exist_ok=True)
 	stamp = (name_stamp or (lambda: datetime.now().strftime("%Y%m%d-%H%M%S-%f")))()
-	log = FileTranscript(directory / f"session-{stamp}.log", timestamp=timestamp)
-	log.open()
+	transcript = FileTranscript(TextFileWriter(directory / f"session-{stamp}.log"), timestamp=timestamp)
+	transcript.open()
 	_prune(directory, keep)
-	return log
+	return transcript
 
 
 def _prune(directory: Path, keep: int) -> None:

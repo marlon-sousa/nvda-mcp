@@ -268,16 +268,24 @@ must stay stdlib-only.
 **Bridge tests — ports and adapters (hexagonal).** The addon is organized as
 domain / ports / adapters / wiring (see AGENTS.md for the layout and rules):
 
-- **`domain/`** is pure and NVDA-free — the `Session` controller (state
-  machine), the indexed speech/braille buffers + wait logic, JSON-lines
-  framing, and the abstract **ports** (`abc.ABC`): speech source, synth
-  swapper, gesture sender, clock, transport. It is unit-tested headlessly
-  under desktop Python 3.13 (matching NVDA 2026.1) with injected fakes (fake
-  clock, scripted fake transport ⇒ assert restore ran on a dropped
-  connection).
+- **`domain/`** is pure and NVDA-free, split by **role** so the path says what a
+  file is: `controllers/` (the `Session` orchestrator — handed its ports, drives
+  the entities), `entities/` (the indexed speech/braille buffers + wait logic),
+  and `ports/` (the `abc.ABC` seams: message channel, speech source, synth
+  swapper, gesture sender, clock, transcript, adapter factory). It is
+  unit-tested headlessly under desktop Python 3.13 (matching NVDA 2026.1) with
+  injected fakes (fake clock, scripted fake channel ⇒ assert restore ran on a
+  dropped connection). Note "pure" ≠ "domain": JSON-lines framing is pure and
+  still lives in an adapter, behind the `MessageChannel` port, so the
+  controller's collaborators are *only* ports.
 - **`adapters/`** is the only place NVDA is imported (`speech`,
   `synthDriverHandler`, `inputCore`, `config`, `api`, `braille`, …), one class
-  per file. The **synth swapper** owns not just swap/restore but the whole
+  per file. Adapters are **layered** so the untestable surface shrinks to a
+  leaf: an adapter may depend on another only through a seam in
+  `adapters/ports/` (`FileTranscript`→`FileWriter`→`TextFileWriter`;
+  `JsonLinesChannel`→`Transport`→`SocketTransport`). The upper adapter holds
+  every decision and is unit-tested against a fake seam; the leaf just calls the
+  OS. The **synth swapper** owns not just swap/restore but the whole
   silent-mode defense — `config["speech"]["synth"]` agreement, the
   `config.pre_configSave` guard, and the `getSynthInstance` patch /
   profile-switch survival (see fail-safe restoration).
