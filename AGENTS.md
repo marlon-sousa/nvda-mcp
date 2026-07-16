@@ -120,14 +120,6 @@ Rules that keep this honest:
   NVDA's shared `sys.modules`. If wiring ever gets genuinely hard to follow,
   promote it to an explicit hand-written `container.py` of factory functions —
   same central place, zero dependencies, still checked by pyright.
-- **Test doubles are hand-written stateful fakes** (in `tests/`), one per port,
-  each subclassing its ABC — not `unittest.mock`. The domain drives its
-  collaborators through real protocols (read loops, index reads, state
-  transitions), so the doubles need behaviour, not call-recording; mocks would
-  re-script return values per test and exercise less. Signature/contract drift
-  is already caught by the ABCs (runtime) + pyright strict (CI); behavioural
-  conformance of the *real* adapters is proven by the milestone-6 live-NVDA
-  integration tests, not by the unit doubles.
 - **Mode (silent/live) is only known after `hello`.** Do not build
   mode-specific adapters up front. `wiring.py` injects an **`AdapterFactory`
   port**; `Session` reads `hello`, then calls `factory.build(mode)` for the
@@ -145,6 +137,122 @@ Rules that keep this honest:
   strict-checked and those thin edge files are validated by the milestone-6
   live-NVDA integration tests. Keep edge files thin — real logic belongs in the
   checked domain.
+
+## Testing
+
+The domain is pure, so it is unit-tested headlessly under desktop Python with
+its ports faked. The rules below come with their reasoning, because each looks
+like a style preference and is actually a correctness argument.
+
+### Where a test lives — `tests/unit/` mirrors the source tree
+
+**`tests/unit/` is a mirror of the package, file for file**, so the path alone
+answers "which test covers this file?" and "where do I add a test for this?":
+
+```
+addon/globalPlugins/nvdaMcpBridge/domain/entities/speech_buffer.py
+tests/unit/domain/entities/test_speech_buffer.py
+```
+
+One test module per source module — **do not** let a test module cover its
+neighbours. (The rule earns its keep immediately: one `test_speech_buffer.py`
+was quietly testing three units — the base, speech and braille — so the base's
+index bookkeeping got tested through whichever subclass was handy. Mirroring
+forced it into `test_indexed_buffer.py`, which now tests the base's contract
+through a minimal stub subclass, while each buffer tests only what it adds.)
+
+**A source file with no test file is a deliberate statement, not an omission:**
+
+| No test file | Why |
+|---|---|
+| `domain/ports/*.py` | ABCs — no behaviour to test. |
+| leaf adapters (`real_clock.py`, `text_file_writer.py`, `socket_transport.py`) | They make no decisions; there is nothing `open()` doesn't already guarantee. If you are adding a test here, you have put a decision in a leaf — move it up. |
+| `plugin.py` | The NVDA edge. Covered by the integration tests, not units. |
+
+**Fakes mirror the ports they stand in for**, same one-class-per-file rule and
+no re-export facade: `tests/fakes/clock.py` ↔ `domain/ports/clock.py`, imported
+as `from fakes.clock import FakeClock`.
+
+**`tests/integration/` is named after the USE CASE, not the file** — these prove
+a whole scenario end to end (e.g. `test_silent_session_restores_synth.py`),
+need a live NVDA, and are the only place that proves a *real* adapter behaves
+like its fake. Milestone 6.
+
+Keep test module basenames unique across the tree (pytest's prepend import mode
+requires it). Mirroring gives that for free, since source basenames are unique.
+
+### Doubles are hand-written stateful fakes, not mocks
+
+One per port, in `tests/fakes.py`, each **subclassing its ABC** — so a fake that
+forgets a method fails at construction exactly as the real NVDA adapter would.
+
+The domain drives its collaborators through *real protocols* (wait loops, index
+reads, state transitions) and asserts on resulting behaviour, so the doubles
+need **behaviour**, not call-recording. A `Mock` returns a `Mock` for every
+call, so you would hand-script return values per test — re-implementing the
+collaborator, badly, and exercising less. `create_autospec`'s selling point
+(catching contract drift) is already covered here by the **ABCs at runtime** plus
+**pyright strict in CI**.
+
+The cost is real and accepted: fakes are code we maintain. What they cannot
+prove is that the *real* adapter behaves like the fake — only that signatures
+match. That guarantee comes from the milestone-6 live-NVDA integration tests,
+not from the unit doubles.
+
+### Fixtures for uniform collaborators; builder helpers for scenarios
+
+**Use a fixture when every test wants the same thing** ("a buffer on the fake
+clock"). The point is not DRY — it is that a fixture makes a *relationship*
+structural. `clock` (conftest) plus `speech(clock)` guarantees the buffer's
+clock **is** the one the test advances. Hand-wiring that per test permits:
+
+```python
+clock = FakeClock()
+buf = SpeechBuffer(FakeClock())   # a DIFFERENT clock
+clock.advance(2.0)                # advances nothing the buffer can see
+```
+
+which passes silently and asserts nothing. The fixture makes that unwritable.
+
+Prefer a **named variant fixture** (`silent_speech`) over a factory fixture
+(`make_speech(exact=True)`) when there are only a couple of variants — a name
+reads better than an argument.
+
+**Do NOT reach for a fixture when each test customises construction.** The
+session tests vary the swapper (one that raises on restore), the gesture sender
+(one that rejects an id), the `SessionConfig`, the transport script — that is a
+**builder helper** (`run_session(...)` with optional overrides), not a fixture.
+Fixtures suit uniform collaborators; builders suit per-test scenarios. Forcing
+fixtures there means one fixture per permutation.
+
+**A fixture lives at the narrowest scope that serves it** — that is what the
+mirrored tree buys us:
+
+| Used by | Lives in |
+|---|---|
+| one test module | that module (`speech`, `silent_speech`, `braille`) |
+| sibling modules in one directory | a `conftest.py` beside them |
+| everything | `tests/conftest.py` (`clock`) — also the harness bootstrap |
+
+Promote a fixture only when a second module actually needs it; do not start at
+the root. Function scope (the default) is what we want: a fresh instance per
+test, no state leaking between them.
+
+**Why fixtures are fine when we rejected a DI container** (they are both
+injection with the same "where does this come from?" indirection): pytest never
+ships in the addon, the dependency is *visible in the test signature*, and a
+missing fixture fails at collection with a clear message. None of the container
+objections — a compiled binary inside NVDA, a `sys.modules` collision, hiding
+the *production* graph, runtime failures inside NVDA — apply. Explicit wiring in
+production; fixtures in tests.
+
+### Time is injected, never patched
+
+`FakeClock.sleep` is an **instant advance**, so a 5-second timeout test runs in
+microseconds. This is also why `freezegun` / `time-machine` are the wrong tool
+here: they patch the global clock but leave `time.sleep` real, so the wait loops
+would still sleep for real — and patching globals under a `Clock` port would
+make the port pointless for testing.
 
 ## Hard invariants — do not break
 
@@ -223,6 +331,16 @@ merged code + the spec + this file. See the spec's Milestones section.
   toggling browse/focus mode) signal via an earcon/beep, not words, so speech
   assertions have nothing to match. Use `getState` (browse/focus mode, speech
   mode, sleep, input help) to assert those.
+- **CI job names are short and stable (`shared`, `server`, `bridge`) — don't
+  "improve" them.** Branch protection matches required status checks by the
+  literal job name, so a descriptive name couples the merge gate to the job's
+  contents. Renaming `bridge (pyright against NVDA source)` once the NVDA
+  checkout was gone parked every PR on *"Expected — waiting for status to be
+  reported"* forever: the job passed, just under a new name, and only a repo
+  settings edit could unblock it. Put the detail in **step** names, which are
+  free to change. If a job name ever must change, update
+  `repos/<owner>/<repo>/branches/main/protection/required_status_checks` in the
+  same breath — push the workflow first, let it report, then flip the setting.
 - **NVDA reference source is `../nvda/source`** (2026.1). Consult it for APIs
   rather than guessing; only `source/` is needed. It is a **reference only** —
   not a build/CI/type-check dependency. Adapter files that import NVDA go in

@@ -1,27 +1,20 @@
-# nvdaMcpBridge -- NVDA MCP Bridge global plugin.
+# nvdaMcpBridge -- NVDA MCP Bridge addon package.
 # Copyright (C) 2026 Marlon Brandao de Sousa. GPL-2. See COPYING.txt.
 #
-# SKELETON (milestone 1). This establishes the addon package and loads inertly.
-# The loopback socket server, session state machine, speech/braille capture,
-# gesture input and the fail-safe synth restoration are added in later
-# milestones (sessions B and C). Until then the plugin deliberately does
-# nothing with side effects, so it is safe to install.
+# NVDA loads a global plugin as ``globalPlugins.<name>.GlobalPlugin``. We expose
+# that class **lazily** via a module-level ``__getattr__`` (PEP 562) so that
+# importing this package does NOT import ``plugin.py`` -- and therefore does not
+# import NVDA. The headless tests import ``nvdaMcpBridge.domain.*`` directly and
+# never touch NVDA; only NVDA's own ``.GlobalPlugin`` access pulls in the edge.
 
 from __future__ import annotations
 
-import globalPluginHandler
-from logHandler import log
+from typing import Any
 
 
-class GlobalPlugin(globalPluginHandler.GlobalPlugin):
-	"""Entry point NVDA instantiates when the addon loads.
+def __getattr__(name: str) -> Any:
+	if name == "GlobalPlugin":
+		from .plugin import GlobalPlugin
 
-	Inert placeholder: no socket bound, no hooks registered, no synth swapped.
-	"""
-
-	def __init__(self) -> None:
-		super().__init__()
-		log.debug("nvdaMcpBridge: loaded (inert skeleton; no session server yet)")
-
-	def terminate(self) -> None:
-		super().terminate()
+		return GlobalPlugin
+	raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

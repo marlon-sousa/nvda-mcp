@@ -1,6 +1,12 @@
 # Bridge (NVDA addon) tooling config. The addon itself is built with scons
 # (see sconstruct); this file only configures the linters/type-checker.
 
+[tool.pytest.ini_options]
+# The bridge domain is stdlib-only and unit-tested headlessly under desktop
+# Python 3.13. tests/conftest.py syncs the shared wire module in and puts the
+# package on sys.path (no NVDA, no stubs). Only the pure domain is exercised.
+testpaths = ["tests"]
+
 [tool.ruff]
 line-length = 110
 
@@ -22,18 +28,24 @@ pythonVersion = "3.13"       # NVDA 2026.1 embeds CPython 3.13
 pythonPlatform = "Windows"
 typeCheckingMode = "strict"
 
-# Only OUR code is reported. NVDA's source (and the copied protocol module) are
-# resolved via extraPaths as libraries, so a future NVDA API break surfaces as
-# a type error in our code rather than a runtime surprise.
-include = ["addon/globalPlugins", "addon/synthDrivers", "buildVars.py"]
+# The PURE domain (and the pure adapters, and the tests) are strict-checked.
+# There is NO NVDA source dependency and NO vendored stubs: the side-effecting
+# edge that imports NVDA is exempted via `ignore` below, because the domain it
+# serves is fully checked and the edge is validated by live-NVDA integration
+# tests (milestone 6). See AGENTS.md "Internal architecture — ports & adapters".
+include = ["addon/globalPlugins/nvdaMcpBridge", "buildVars.py", "tests"]
 exclude = ["sconstruct", ".git", "__pycache__"]
 
-extraPaths = [
-    "./addon",
-    # NVDA 2026.1 source checkout, a sibling of the nvda-mcp repo. CI uses a
-    # shallow sparse checkout of nvda/source.
-    "../../nvda/source",
+# The NVDA-importing edge: unresolved NVDA imports here raise nothing. Keep
+# these files thin (glue only); real logic belongs in the checked domain.
+ignore = [
+    "addon/globalPlugins/nvdaMcpBridge/plugin.py",
+    "addon/globalPlugins/nvdaMcpBridge/adapters/nvda_*.py",
 ]
+
+# So `import nvdaMcpBridge.*` (the package) and `import fakes` (test helpers)
+# resolve without an installed package or an NVDA checkout.
+extraPaths = ["./addon/globalPlugins", "./tests"]
 
 analyzeUnannotatedFunctions = true
 reportMissingModuleSource = false
