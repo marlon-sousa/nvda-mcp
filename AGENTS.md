@@ -141,8 +141,45 @@ Rules that keep this honest:
 ## Testing
 
 The domain is pure, so it is unit-tested headlessly under desktop Python with
-its ports faked. Three rules, and the reasoning, because each of them looks like
-a style preference and is actually a correctness argument.
+its ports faked. The rules below come with their reasoning, because each looks
+like a style preference and is actually a correctness argument.
+
+### Where a test lives — `tests/unit/` mirrors the source tree
+
+**`tests/unit/` is a mirror of the package, file for file**, so the path alone
+answers "which test covers this file?" and "where do I add a test for this?":
+
+```
+addon/globalPlugins/nvdaMcpBridge/domain/entities/speech_buffer.py
+tests/unit/domain/entities/test_speech_buffer.py
+```
+
+One test module per source module — **do not** let a test module cover its
+neighbours. (The rule earns its keep immediately: one `test_speech_buffer.py`
+was quietly testing three units — the base, speech and braille — so the base's
+index bookkeeping got tested through whichever subclass was handy. Mirroring
+forced it into `test_indexed_buffer.py`, which now tests the base's contract
+through a minimal stub subclass, while each buffer tests only what it adds.)
+
+**A source file with no test file is a deliberate statement, not an omission:**
+
+| No test file | Why |
+|---|---|
+| `domain/ports/*.py` | ABCs — no behaviour to test. |
+| leaf adapters (`real_clock.py`, `text_file_writer.py`, `socket_transport.py`) | They make no decisions; there is nothing `open()` doesn't already guarantee. If you are adding a test here, you have put a decision in a leaf — move it up. |
+| `plugin.py` | The NVDA edge. Covered by the integration tests, not units. |
+
+**Fakes mirror the ports they stand in for**, same one-class-per-file rule and
+no re-export facade: `tests/fakes/clock.py` ↔ `domain/ports/clock.py`, imported
+as `from fakes.clock import FakeClock`.
+
+**`tests/integration/` is named after the USE CASE, not the file** — these prove
+a whole scenario end to end (e.g. `test_silent_session_restores_synth.py`),
+need a live NVDA, and are the only place that proves a *real* adapter behaves
+like its fake. Milestone 6.
+
+Keep test module basenames unique across the tree (pytest's prepend import mode
+requires it). Mirroring gives that for free, since source basenames are unique.
 
 ### Doubles are hand-written stateful fakes, not mocks
 
@@ -188,8 +225,18 @@ session tests vary the swapper (one that raises on restore), the gesture sender
 Fixtures suit uniform collaborators; builders suit per-test scenarios. Forcing
 fixtures there means one fixture per permutation.
 
-Shared fixtures live in `conftest.py`; module-specific ones in the test module.
-Function scope (the default) is what we want: a fresh instance per test.
+**A fixture lives at the narrowest scope that serves it** — that is what the
+mirrored tree buys us:
+
+| Used by | Lives in |
+|---|---|
+| one test module | that module (`speech`, `silent_speech`, `braille`) |
+| sibling modules in one directory | a `conftest.py` beside them |
+| everything | `tests/conftest.py` (`clock`) — also the harness bootstrap |
+
+Promote a fixture only when a second module actually needs it; do not start at
+the root. Function scope (the default) is what we want: a fresh instance per
+test, no state leaking between them.
 
 **Why fixtures are fine when we rejected a DI container** (they are both
 injection with the same "where does this come from?" indirection): pytest never

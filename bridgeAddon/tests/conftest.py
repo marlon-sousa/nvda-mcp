@@ -8,8 +8,10 @@
 # ``globalPlugins`` directory on ``sys.path`` so ``import nvdaMcpBridge.*`` works.
 # No NVDA stubs required.
 #
-# It also holds the fixtures shared across test modules. See AGENTS.md
-# ("Testing") for when a fixture is the right tool and when it is not.
+# It also holds the fixtures that cut across test modules -- only those. A
+# fixture used by one module lives in that module; one shared by siblings lives
+# in a conftest.py beside them. See AGENTS.md ("Testing") for the layout rules
+# and for when a fixture is the right tool at all.
 
 from __future__ import annotations
 
@@ -34,12 +36,15 @@ def _sync_shared_wire() -> None:
 
 
 _sync_shared_wire()
-if str(_GLOBAL_PLUGINS) not in sys.path:
-	sys.path.insert(0, str(_GLOBAL_PLUGINS))
+for _path in (_GLOBAL_PLUGINS, _TESTS_DIR):
+	# _TESTS_DIR explicitly, so `fakes.*` imports the same way from any depth of
+	# the mirrored tests/unit/ tree, not just from files sitting next to it.
+	if str(_path) not in sys.path:
+		sys.path.insert(0, str(_path))
 
 # Imported after the bootstrap above on purpose: `fakes` imports the addon
 # package, which is only importable once globalPlugins is on sys.path.
-from fakes import FakeClock  # noqa: E402
+from fakes.clock import FakeClock  # noqa: E402
 
 
 @pytest.fixture

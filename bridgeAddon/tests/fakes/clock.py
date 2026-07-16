@@ -1,14 +1,7 @@
-# Fakes implementing the bridge ports, for headless tests.
+# nvdaMcpBridge tests -- FakeClock, standing in for the Clock port.
 # Copyright (C) 2026 Marlon Brandao de Sousa. GPL-2. See COPYING.txt.
 #
-# Each fake subclasses the ABC it stands in for, so a forgotten method fails
-# here exactly as it would for the real NVDA adapter. They are hand-written and
-# STATEFUL rather than mocks, because the code under test drives its
-# collaborators through real protocols (wait loops, index reads, state
-# transitions) and asserts on resulting behaviour -- a call-recorder would have
-# to re-script return values per test and would exercise less. See AGENTS.md.
-#
-# This file grows a fake per port as the ports land.
+# FAKES: domain/ports/clock.py
 
 from __future__ import annotations
 
