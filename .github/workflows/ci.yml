@@ -1,5 +1,13 @@
 name: CI
 
+# Job names are SHORT and STABLE -- `shared`, `server`, `bridge` -- on purpose.
+# Branch protection matches required status checks by this literal string, so a
+# descriptive job name couples the merge gate to the job's *contents*: renaming
+# it (e.g. when the bridge stopped needing an NVDA checkout) silently parks
+# every PR on "Expected - waiting for status to be reported" until someone edits
+# the repo settings to match. Keep the detail in STEP names, which are free to
+# change. Do not "improve" these names.
+
 on:
   push:
     branches: [main]
@@ -7,7 +15,7 @@ on:
 
 jobs:
   shared:
-    name: shared wire (tests + pyright)
+    name: shared
     runs-on: windows-latest
     defaults:
       run:
@@ -15,11 +23,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
-      - run: uv run --python 3.13 pytest -q
-      - run: uv run --python 3.13 pyright
+      - name: Tests (wire contract)
+        run: uv run --python 3.13 pytest -q
+      - name: Pyright
+        run: uv run --python 3.13 pyright
 
   server:
-    name: server (tests + pyright)
+    name: server
     runs-on: windows-latest
     defaults:
       run:
@@ -27,11 +37,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
-      - run: uv run --python 3.13 pytest -q
-      - run: uv run --python 3.13 pyright
+      - name: Tests
+        run: uv run --python 3.13 pytest -q
+      - name: Pyright
+        run: uv run --python 3.13 pyright
 
   bridge:
-    name: bridge (headless tests + pyright)
+    name: bridge
     runs-on: windows-latest
     defaults:
       run:

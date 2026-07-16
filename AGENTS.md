@@ -331,6 +331,16 @@ merged code + the spec + this file. See the spec's Milestones section.
   toggling browse/focus mode) signal via an earcon/beep, not words, so speech
   assertions have nothing to match. Use `getState` (browse/focus mode, speech
   mode, sleep, input help) to assert those.
+- **CI job names are short and stable (`shared`, `server`, `bridge`) — don't
+  "improve" them.** Branch protection matches required status checks by the
+  literal job name, so a descriptive name couples the merge gate to the job's
+  contents. Renaming `bridge (pyright against NVDA source)` once the NVDA
+  checkout was gone parked every PR on *"Expected — waiting for status to be
+  reported"* forever: the job passed, just under a new name, and only a repo
+  settings edit could unblock it. Put the detail in **step** names, which are
+  free to change. If a job name ever must change, update
+  `repos/<owner>/<repo>/branches/main/protection/required_status_checks` in the
+  same breath — push the workflow first, let it report, then flip the setting.
 - **NVDA reference source is `../nvda/source`** (2026.1). Consult it for APIs
   rather than guessing; only `source/` is needed. It is a **reference only** —
   not a build/CI/type-check dependency. Adapter files that import NVDA go in
