@@ -120,14 +120,6 @@ Rules that keep this honest:
   NVDA's shared `sys.modules`. If wiring ever gets genuinely hard to follow,
   promote it to an explicit hand-written `container.py` of factory functions —
   same central place, zero dependencies, still checked by pyright.
-- **Test doubles are hand-written stateful fakes** (in `tests/`), one per port,
-  each subclassing its ABC — not `unittest.mock`. The domain drives its
-  collaborators through real protocols (read loops, index reads, state
-  transitions), so the doubles need behaviour, not call-recording; mocks would
-  re-script return values per test and exercise less. Signature/contract drift
-  is already caught by the ABCs (runtime) + pyright strict (CI); behavioural
-  conformance of the *real* adapters is proven by the milestone-6 live-NVDA
-  integration tests, not by the unit doubles.
 - **Mode (silent/live) is only known after `hello`.** Do not build
   mode-specific adapters up front. `wiring.py` injects an **`AdapterFactory`
   port**; `Session` reads `hello`, then calls `factory.build(mode)` for the
@@ -145,6 +137,75 @@ Rules that keep this honest:
   strict-checked and those thin edge files are validated by the milestone-6
   live-NVDA integration tests. Keep edge files thin — real logic belongs in the
   checked domain.
+
+## Testing
+
+The domain is pure, so it is unit-tested headlessly under desktop Python with
+its ports faked. Three rules, and the reasoning, because each of them looks like
+a style preference and is actually a correctness argument.
+
+### Doubles are hand-written stateful fakes, not mocks
+
+One per port, in `tests/fakes.py`, each **subclassing its ABC** — so a fake that
+forgets a method fails at construction exactly as the real NVDA adapter would.
+
+The domain drives its collaborators through *real protocols* (wait loops, index
+reads, state transitions) and asserts on resulting behaviour, so the doubles
+need **behaviour**, not call-recording. A `Mock` returns a `Mock` for every
+call, so you would hand-script return values per test — re-implementing the
+collaborator, badly, and exercising less. `create_autospec`'s selling point
+(catching contract drift) is already covered here by the **ABCs at runtime** plus
+**pyright strict in CI**.
+
+The cost is real and accepted: fakes are code we maintain. What they cannot
+prove is that the *real* adapter behaves like the fake — only that signatures
+match. That guarantee comes from the milestone-6 live-NVDA integration tests,
+not from the unit doubles.
+
+### Fixtures for uniform collaborators; builder helpers for scenarios
+
+**Use a fixture when every test wants the same thing** ("a buffer on the fake
+clock"). The point is not DRY — it is that a fixture makes a *relationship*
+structural. `clock` (conftest) plus `speech(clock)` guarantees the buffer's
+clock **is** the one the test advances. Hand-wiring that per test permits:
+
+```python
+clock = FakeClock()
+buf = SpeechBuffer(FakeClock())   # a DIFFERENT clock
+clock.advance(2.0)                # advances nothing the buffer can see
+```
+
+which passes silently and asserts nothing. The fixture makes that unwritable.
+
+Prefer a **named variant fixture** (`silent_speech`) over a factory fixture
+(`make_speech(exact=True)`) when there are only a couple of variants — a name
+reads better than an argument.
+
+**Do NOT reach for a fixture when each test customises construction.** The
+session tests vary the swapper (one that raises on restore), the gesture sender
+(one that rejects an id), the `SessionConfig`, the transport script — that is a
+**builder helper** (`run_session(...)` with optional overrides), not a fixture.
+Fixtures suit uniform collaborators; builders suit per-test scenarios. Forcing
+fixtures there means one fixture per permutation.
+
+Shared fixtures live in `conftest.py`; module-specific ones in the test module.
+Function scope (the default) is what we want: a fresh instance per test.
+
+**Why fixtures are fine when we rejected a DI container** (they are both
+injection with the same "where does this come from?" indirection): pytest never
+ships in the addon, the dependency is *visible in the test signature*, and a
+missing fixture fails at collection with a clear message. None of the container
+objections — a compiled binary inside NVDA, a `sys.modules` collision, hiding
+the *production* graph, runtime failures inside NVDA — apply. Explicit wiring in
+production; fixtures in tests.
+
+### Time is injected, never patched
+
+`FakeClock.sleep` is an **instant advance**, so a 5-second timeout test runs in
+microseconds. This is also why `freezegun` / `time-machine` are the wrong tool
+here: they patch the global clock but leave `time.sleep` real, so the wait loops
+would still sleep for real — and patching globals under a `Clock` port would
+make the port pointless for testing.
 
 ## Hard invariants — do not break
 

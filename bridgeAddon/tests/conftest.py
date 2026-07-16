@@ -7,12 +7,17 @@
 # ``from .. import protocol`` resolves to the exact shipped bytes; (2) put the
 # ``globalPlugins`` directory on ``sys.path`` so ``import nvdaMcpBridge.*`` works.
 # No NVDA stubs required.
+#
+# It also holds the fixtures shared across test modules. See AGENTS.md
+# ("Testing") for when a fixture is the right tool and when it is not.
 
 from __future__ import annotations
 
 import importlib.util
 import sys
 from pathlib import Path
+
+import pytest
 
 _TESTS_DIR = Path(__file__).resolve().parent
 _ADDON_ROOT = _TESTS_DIR.parent
@@ -31,3 +36,18 @@ def _sync_shared_wire() -> None:
 _sync_shared_wire()
 if str(_GLOBAL_PLUGINS) not in sys.path:
 	sys.path.insert(0, str(_GLOBAL_PLUGINS))
+
+# Imported after the bootstrap above on purpose: `fakes` imports the addon
+# package, which is only importable once globalPlugins is on sys.path.
+from fakes import FakeClock  # noqa: E402
+
+
+@pytest.fixture
+def clock() -> FakeClock:
+	"""The session-wide fake clock; time moves only when a test says so.
+
+	Anything that reads time or waits takes the Clock port, so handing tests one
+	shared fake here means every collaborator built from it agrees on "now" by
+	construction, rather than each test re-wiring that relationship by hand.
+	"""
+	return FakeClock()
