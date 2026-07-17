@@ -114,7 +114,9 @@ Rules that keep this honest:
   `MessageChannel`). Import each from its own file
   (`from ..ports.clock import Clock`) — the `__init__.py` files carry
   documentation, never re-exports, so every import names its file and a module's
-  dependencies are exactly the ports it lists.
+  dependencies are exactly the ports it lists. This applies to
+  `shared/nvda_mcp_wire` too: import from `nvda_mcp_wire.protocol`, so both
+  halves address the wire contract through a module named `protocol`.
 - **No DI container library.** `wiring.py` read top-to-bottom *is* the answer to
   "who connects what"; annotation-driven auto-wiring hides that graph and turns
   compile-time wiring errors into runtime ones inside NVDA. `dependency-injector`
@@ -156,6 +158,10 @@ answers "which test covers this file?" and "where do I add a test for this?":
 addon/globalPlugins/nvdaMcpBridge/domain/entities/speech_buffer.py
 tests/unit/domain/entities/test_speech_buffer.py
 ```
+
+The mirror applies per package, not just to the bridge:
+`shared/tests/unit/test_protocol.py` ↔ `nvda_mcp_wire/protocol.py`; the
+server adopts the same layout with its hexagonal restructure (session D).
 
 One test module per source module — **do not** let a test module cover its
 neighbours. (The rule earns its keep immediately: one `test_speech_buffer.py`

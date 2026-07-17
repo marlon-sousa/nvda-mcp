@@ -77,7 +77,8 @@ real-world → **F** packaging. Each board entry belongs to one session.
 9. D, MCP server: FastMCP/stdio adapter, v1 MCP tools, `BridgeClient` port,
    unit tests against a fake bridge + in-memory MCP client tests. Spec: none
    yet → specify first. Scope sketch: RFC 0001 component 2 + milestone 4; same
-   hexagonal organization as the bridge (AGENTS.md).
+   hexagonal organization as the bridge (AGENTS.md), and the restructure
+   adopts the `tests/unit/` mirror layout.
 
 ## Convergence (requires C and D both Done)
 
