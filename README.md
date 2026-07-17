@@ -12,15 +12,14 @@ spec alongside.
 
 ## Architecture
 
-```
-MCP client (Claude Code, ...)
-   │  MCP over stdio
-   ▼
-nvda-mcp server            — Python package (mcpServer/), official mcp SDK / FastMCP
-   │  JSON lines over TCP, 127.0.0.1 only
-   ▼
-nvdaMcpBridge              — NVDA add-on (bridgeAddon/): global plugin + spy synth
-```
+The chain, top to bottom — each item talks only to the next:
+
+1. An MCP client (Claude Code, …) speaks MCP over stdio to the server.
+2. The `nvda-mcp` server — a Python package ([mcpServer/](mcpServer/)) on the
+   official `mcp` SDK (FastMCP) — speaks JSON lines over TCP, 127.0.0.1 only,
+   to the bridge.
+3. `nvdaMcpBridge` — an NVDA add-on ([bridgeAddon/](bridgeAddon/)): global
+   plugin + spy synth driver — drives NVDA itself.
 
 The server survives NVDA restarts (restarting NVDA is itself a test operation),
 and NVDA's embedded Python is a poor host for an asyncio MCP stdio server, so
@@ -37,20 +36,22 @@ the two halves are split and meet only at the loopback socket.
 
 ## Development
 
-Requires [uv](https://docs.astral.sh/uv/) and (for the bridge type-check) a
-sibling NVDA 2026.1 source checkout at `../nvda`.
+Requires [uv](https://docs.astral.sh/uv/). No NVDA checkout is needed for any
+of it: the bridge's domain is pure Python and its NVDA edge is exempt from the
+type check (see [AGENTS.md](AGENTS.md)).
 
 ```sh
-# Shared wire contract (no NVDA needed)
+# Shared wire contract
 uv run --directory shared pytest
 uv run --directory shared pyright
 
-# Server (no NVDA needed; tests use a fake bridge)
+# Server (tests use a fake bridge)
 uv run --directory mcpServer pytest
 uv run --directory mcpServer pyright
 
-# Bridge add-on (type-checks against the NVDA source checkout)
+# Bridge add-on: sync the shared wire module in, then headless tests + type check
 py -3.13 bridgeAddon/sync_shared.py
+uv run --directory bridgeAddon pytest
 uv run --directory bridgeAddon pyright   # or: cd bridgeAddon && scons   to build the .nvda-addon
 ```
 
@@ -62,14 +63,10 @@ claude mcp add --scope user nvda -- uv run --directory C:\projects\nvda-mcp\mcpS
 
 ## Status
 
-Implemented per milestone (see [the spec](specs/0001-agent-driven-nvda-over-mcp.md)):
-
-- [x] **Session A — foundation**: repo layout, shared wire protocol + tests, tooling/CI.
-- [ ] Session B — bridge core logic (buffer, session state machine, framing, transcript).
-- [ ] Session C — bridge ↔ NVDA adapters, spy synth, live validation (milestones 1–3).
-- [ ] Session D — MCP server + v1 tools (milestone 4).
-- [ ] Session E — introspection + real-world validation (milestones 5–6).
-- [ ] Session F — packaging & release (milestone 7).
+[ROADMAP.md](ROADMAP.md) is the status board and the single source of truth
+for what is done, in review, and next — kept current by each implementing PR.
+The larger arcs (sessions A–F) are described in
+[the spec's Milestones](specs/0001-agent-driven-nvda-over-mcp.md).
 
 ## License
 

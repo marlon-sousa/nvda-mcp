@@ -186,7 +186,8 @@ requires it). Mirroring gives that for free, since source basenames are unique.
 
 ### Doubles are hand-written stateful fakes, not mocks
 
-One per port, in `tests/fakes.py`, each **subclassing its ABC** — so a fake that
+One per port, in `tests/fakes/` (one file per fake, mirroring the port's
+file), each **subclassing its ABC** — so a fake that
 forgets a method fails at construction exactly as the real NVDA adapter would.
 
 The domain drives its collaborators through *real protocols* (wait loops, index
