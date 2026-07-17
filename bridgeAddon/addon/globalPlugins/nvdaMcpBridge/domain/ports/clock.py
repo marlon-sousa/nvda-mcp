@@ -1,5 +1,10 @@
 # nvdaMcpBridge domain -- the Clock port.
 # Copyright (C) 2026 Marlon Brandao de Sousa. GPL-2. See COPYING.txt.
+#
+# ROLE: domain port. What the domain needs from the world about time.
+# IMPLEMENTED BY: adapters/real_clock.py (production), tests/fakes/clock.py.
+# USED BY: the buffer entities (wait loops) and, later, the Session
+# controller's heartbeat/inactivity watchdogs.
 
 from __future__ import annotations
 

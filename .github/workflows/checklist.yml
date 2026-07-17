@@ -1,0 +1,34 @@
+name: PR checklist
+
+# Fails while the PR description still has unchecked checkboxes, so a PR whose
+# body carries a manual checklist (e.g. the live-NVDA checklist that sessions
+# C and E end with) cannot merge until every item is checked. Re-runs on
+# `edited`, which fires when a checkbox is toggled in the PR description. To
+# actually block merge, add this job as a required status check in the branch
+# protection for main; on its own it only reports pass/fail. Job-name caveat
+# from ci.yml applies here too: branch protection matches the literal job
+# name, so do not rename it.
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+jobs:
+  checklist:
+    name: no unchecked checkboxes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail on unchecked checkboxes in the PR body
+        env:
+          # Passed as an env var, never interpolated into the script, so the
+          # untrusted PR body cannot inject shell.
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          if printf '%s\n' "$BODY" | grep -Eq '^[[:space:]]*[-*+] \[ \]'; then
+            echo "This PR still has unchecked checkboxes in its description:"
+            printf '%s\n' "$BODY" | grep -En '^[[:space:]]*[-*+] \[ \]' || true
+            echo
+            echo "Complete every checklist item (e.g. the manual live-NVDA checklist) before merging."
+            exit 1
+          fi
+          echo "No unchecked checkboxes remain in the PR description."

@@ -28,15 +28,13 @@ Later specs (`specs/NNNN-*.md`) cover further use cases and features.
 
 ## Architecture
 
-```
-MCP client (Claude Code, ...)
-   │  MCP over stdio
-   ▼
-nvda-mcp server            — Python package, official `mcp` SDK (FastMCP)
-   │  JSON lines over TCP, 127.0.0.1 only
-   ▼
-nvda-mcp-bridge            — NVDA addon (global plugin + spy synth driver)
-```
+The chain, top to bottom — each item talks only to the next:
+
+1. An MCP client (Claude Code, …) speaks MCP over stdio to the server.
+2. The `nvda-mcp` server — a Python package on the official `mcp` SDK
+   (FastMCP) — speaks JSON lines over TCP, 127.0.0.1 only, to the bridge.
+3. The `nvda-mcp-bridge` — an NVDA addon (global plugin + spy synth driver) —
+   drives NVDA itself.
 
 Why split: the MCP server survives NVDA restarts (restarting NVDA is itself a
 test operation), and NVDA's embedded Python is a poor host for an asyncio MCP
