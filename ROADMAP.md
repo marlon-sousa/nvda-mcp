@@ -70,9 +70,9 @@ real-world → **F** packaging. Each board entry belongs to one session.
 7. B, session controller — split into two sequential PRs, one spec:
    [0004-bridge-session-controller.md](specs/0004-bridge-session-controller.md)
    (rides in PR 7a's branch).
-   - **7a**, the component: five domain ports (`AdapterFactory` — mode known
-     only after `hello` — speech/braille sources, synth swapper, gesture
-     sender), `Session` (handshake, dispatch, heartbeat + inactivity
+   - **7a** — **Done (PR #9, 2026-07-17)**: five domain ports (`AdapterFactory`
+     — mode known only after `hello` — speech/braille sources, synth swapper,
+     gesture sender), `Session` (handshake, dispatch, heartbeat + inactivity
      watchdogs, teardown that always restores the synth), the scriptable
      fakes, session unit tests.
    - **7b**, the surface: `echo` wire command, `wiring.py`,
