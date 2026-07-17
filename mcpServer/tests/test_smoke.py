@@ -6,7 +6,7 @@ from __future__ import annotations
 import pytest
 
 import nvda_mcp
-from nvda_mcp_wire import PROTOCOL_VERSION, Command
+from nvda_mcp_wire.protocol import PROTOCOL_VERSION, Command
 
 
 def test_version_exposed() -> None:
