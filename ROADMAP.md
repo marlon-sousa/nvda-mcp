@@ -67,11 +67,17 @@ real-world → **F** packaging. Each board entry belongs to one session.
    a decision-free leaf. Spec:
    [0003-bridge-transcript.md](specs/0003-bridge-transcript.md) (retroactive,
    rides in the PR). Merged as PR #7 (2026-07-17).
-7. B, session controller: `Session` (handshake, dispatch, heartbeat +
-   inactivity watchdogs, teardown that always restores the synth),
-   `AdapterFactory` port (mode known only after `hello`), `wiring.py`. Spec:
-   none yet → specify first. Scope sketch: RFC 0001 session + fail-safe
-   sections; AGENTS.md architecture rules.
+7. B, session controller — split into two sequential PRs, one spec:
+   [0004-bridge-session-controller.md](specs/0004-bridge-session-controller.md)
+   (rides in PR 7a's branch).
+   - **7a**, the component: five domain ports (`AdapterFactory` — mode known
+     only after `hello` — speech/braille sources, synth swapper, gesture
+     sender), `Session` (handshake, dispatch, heartbeat + inactivity
+     watchdogs, teardown that always restores the synth), the scriptable
+     fakes, session unit tests.
+   - **7b**, the surface: `echo` wire command, `wiring.py`,
+     `LoopbackTransport`, the headless wire-level scenario — the integration
+     surface lane 2 tests against.
 8. C, bridge↔NVDA: real NVDA adapters (`adapters/nvda_*.py`),
    `synthDrivers/nvdaMcpSpy.py`, `socket_transport.py` + accept loop, plugin
    wiring, panic gesture, scons build. Needs live NVDA with Marlon at the
