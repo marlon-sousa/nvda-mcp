@@ -59,8 +59,11 @@ real-world → **F** packaging. Each board entry belongs to one session.
    whole-message I/O seam, framing behind the Transport adapter seam. Spec:
    [0002-bridge-message-channel.md](specs/0002-bridge-message-channel.md)
    (retroactive, rides in the PR). Merged as PR #6 (2026-07-17).
-6. **In review** — B, Transcript port + file transcript stack. Spec: RFC 0001
-   (grandfathered). PR #7.
+6. **Done** — B, Transcript port + file transcript stack: the session's
+   human-readable record, vocabulary tested against a fake writer, real IO in
+   a decision-free leaf. Spec:
+   [0003-bridge-transcript.md](specs/0003-bridge-transcript.md) (retroactive,
+   rides in the PR). Merged as PR #7 (2026-07-17).
 7. B, session controller: `Session` (handshake, dispatch, heartbeat +
    inactivity watchdogs, teardown that always restores the synth),
    `AdapterFactory` port (mode known only after `hello`), `wiring.py`. Spec:
