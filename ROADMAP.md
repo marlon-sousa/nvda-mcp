@@ -77,9 +77,10 @@ real-world → **F** packaging. Each board entry belongs to one session.
      gesture sender), `Session` (handshake, dispatch, heartbeat + inactivity
      watchdogs, teardown that always restores the synth), the scriptable
      fakes, session unit tests.
-   - **7b**, the surface: `echo` wire command, `wiring.py`,
-     `LoopbackTransport`, the headless wire-level scenario — the integration
-     surface lane 2 tests against.
+   - **7b** — **Done (PR #10, 2026-07-18)**, closes session B: `echo` wire
+     command + `EchoHandler`, `wiring.py` (`build_session`), `LoopbackTransport`,
+     and the headless wire-level scenario — the integration surface lane 2
+     tests against.
 8. C, bridge↔NVDA: real NVDA adapters (`adapters/nvda_*.py`),
    `synthDrivers/nvdaMcpSpy.py`, `socket_transport.py` + accept loop, plugin
    wiring, panic gesture, scons build. Needs live NVDA with Marlon at the

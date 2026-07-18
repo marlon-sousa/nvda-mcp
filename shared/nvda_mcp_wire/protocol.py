@@ -48,6 +48,8 @@ __all__ = [
 	"Response",
 	"HelloParams",
 	"HelloResult",
+	"EchoParams",
+	"EchoResult",
 	"PressGestureParams",
 	"GetSpeechParams",
 	"SpeechResult",
@@ -102,6 +104,7 @@ class Command(StrEnum):
 
 	HELLO = "hello"
 	PING = "ping"
+	ECHO = "echo"
 	PRESS_GESTURE = "pressGesture"
 	GET_SPEECH = "getSpeech"
 	GET_LAST_SPEECH = "getLastSpeech"
@@ -324,6 +327,24 @@ class HelloResult:
 	mode: CaptureMode
 	synth: str
 	logPath: str
+
+
+@dataclass
+class EchoParams:
+	"""Diagnostic round-trip: whatever ``payload`` is sent comes back unchanged.
+
+	``payload`` is ``Any`` on purpose — echo exists to prove the *whole* stack
+	(encode → frame → decode → validate → dispatch → re-encode) survives arbitrary
+	JSON: unicode, nesting, floats, long strings. No other command exercises that
+	end to end.
+	"""
+
+	payload: Any
+
+
+@dataclass
+class EchoResult:
+	payload: Any
 
 
 @dataclass

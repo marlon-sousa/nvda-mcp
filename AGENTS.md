@@ -236,9 +236,13 @@ double — builders, helpers — lives in a sibling `tests/support/` package
 doubles and nothing else.
 
 **`tests/integration/` is named after the USE CASE, not the file** — these prove
-a whole scenario end to end (e.g. `test_silent_session_restores_synth.py`),
-need a live NVDA, and are the only place that proves a *real* adapter behaves
-like its fake. Milestone 6.
+a whole scenario end to end. Two kinds live here. **Headless** scenarios drive
+the real session stack (real dispatch, real JSON-lines framing) over a
+`LoopbackTransport` with a fake NVDA, no socket and no NVDA — so they **run in
+CI** like any unit test (e.g. `test_wire_session_roundtrip.py`, the recipe lane
+2 builds on). **Live-NVDA** scenarios (e.g. `test_silent_session_restores_synth.py`)
+need a real NVDA and are the only place that proves a *real* adapter behaves
+like its fake; those are milestone 6 and do not run in CI.
 
 Keep test module basenames unique across the tree (pytest's prepend import mode
 requires it). Mirroring gives that for free, since source basenames are unique.

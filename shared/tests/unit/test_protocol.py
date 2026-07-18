@@ -165,6 +165,22 @@ def test_encode_decode_round_trip() -> None:
 	assert p.from_dict(p.HelloParams, decoded) == p.HelloParams(mode=p.CaptureMode.SILENT, protocolVersion=1)
 
 
+@pytest.mark.parametrize(
+	"payload",
+	[
+		"olá café \U0001f600",
+		{"nested": [1, 2, {"deep": True}], "n": 3.5, "s": "x"},
+		[True, None, "mix", 42],
+		"x" * 5000,
+	],
+)
+def test_echo_payload_survives_the_full_stack(payload: Any) -> None:
+	# encode -> frame -> decode -> validate -> back to the dataclass, byte-exact.
+	raw = p.encode_message(p.EchoResult(payload=payload))
+	restored = p.from_dict(p.EchoResult, p.decode_message(raw))
+	assert restored.payload == payload
+
+
 def test_encode_non_ascii_preserved() -> None:
 	raw = p.encode_message(p.SpeechResult(text="olá café", fromIndex=0, toIndex=1))
 	assert "olá café" in raw.decode("utf-8")
@@ -220,6 +236,7 @@ def test_command_set_matches_plan_v1() -> None:
 	expected = {
 		"hello",
 		"ping",
+		"echo",
 		"pressGesture",
 		"getSpeech",
 		"getLastSpeech",

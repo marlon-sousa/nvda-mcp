@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING
 from .... import protocol
 from .bye import ByeHandler
 from .command_handler import CommandHandler
+from .echo import EchoHandler
 from .get_braille import GetBrailleHandler
 from .get_last_speech import GetLastSpeechHandler
 from .get_next_speech_index import GetNextSpeechIndexHandler
@@ -43,6 +44,7 @@ def build_command_registry(factory: AdapterFactory, nvda_version: str) -> dict[s
 		protocol.Command.HELLO: HelloHandler(factory, nvda_version),
 		protocol.Command.BYE: ByeHandler(),
 		protocol.Command.PING: PingHandler(),
+		protocol.Command.ECHO: EchoHandler(),
 		protocol.Command.PRESS_GESTURE: PressGestureHandler(),
 		protocol.Command.GET_SPEECH: GetSpeechHandler(),
 		protocol.Command.GET_LAST_SPEECH: GetLastSpeechHandler(),
