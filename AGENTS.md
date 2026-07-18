@@ -346,6 +346,20 @@ only needs the merged code + its spec + this file.
   amendment rides in the same PR. (Process-level doc changes — this file,
   ROADMAP.md's rules — are still approved in conversation and may land
   directly on main.)
+- **A spec MUST include the class/file layout — Decided.** Before any code, the
+  spec enumerates every file/class the PR will add, each with its one-line
+  **role** (port / controller / entity / adapter, or a named supporting
+  construct — e.g. a *parameter object* like `SessionContext`) and its
+  collaborators (which ports/entities it holds, who builds it, who calls it).
+  This layout is the review gate for the **decomposition itself** — it is where
+  "if you cannot name a class's role, it is in the wrong place" gets applied in
+  the spec conversation, so structural mistakes are caught *before* code, not
+  after the first implementation. The kinds of mistakes this exists to catch,
+  learned the hard way: a single class doing two roles (the `Session` was both
+  lifecycle *and* a flat command dispatcher — each command is really its own
+  controller); a holder mislabelled (`SessionContext` is a parameter object,
+  not an adapter — it does no IO). If the layout changes while coding, the
+  amendment rides in the PR with a one-line why.
 - **The implementing PR flips its own ROADMAP.md entry to Done**, so the board
   is correct on main the moment the PR merges — no separate bookkeeping
   commit.

@@ -13,11 +13,13 @@ notes.
   of work comes next:
   - **Spec: none yet** → the next step is a spec conversation, not code. Branch
     off main for the entry, write the spec there (`specs/NNNN-title.md`) with
-    Marlon, and get it agreed in conversation. The spec rides in the
-    implementing PR on that branch — it does not land on main separately — and
-    the PR updates the entry's Spec field. Never code ahead of an agreed spec:
-    implementation starts on the branch only after the spec is approved in
-    conversation.
+    Marlon, and get it agreed in conversation. The spec **must include the
+    class/file layout** — every class to be added, its role, and its
+    collaborators — so the decomposition is reviewed before code (see AGENTS.md,
+    "Spec before code"). The spec rides in the implementing PR on that branch —
+    it does not land on main separately — and the PR updates the entry's Spec
+    field. Never code ahead of an agreed spec: implementation starts on the
+    branch only after the spec is approved in conversation.
   - **Spec: exists** → implement it in a PR judged against the spec (branch off
     main; short PR: one component + its port(s) + tests, per AGENTS.md).
 - **Marking done:** the implementing PR flips its own entry to
@@ -106,9 +108,11 @@ real-world → **F** packaging. Each board entry belongs to one session.
   untested. Session B's split into PRs #3–#7 is the template — a "session" is
   a context boundary, not a PR size.
 - Spec before code: every entry not grandfathered above is implemented against
-  a spec agreed in conversation before any implementation is written. The spec
-  file rides in the implementing PR's branch and merges with it. If
-  implementation forces a spec amendment, the amendment rides in the same PR.
+  a spec agreed in conversation before any implementation is written, and the
+  spec includes the class/file layout (roles + collaborators) so the
+  decomposition is caught in review, not after code. The spec file rides in the
+  implementing PR's branch and merges with it. If implementation forces a spec
+  amendment, the amendment rides in the same PR.
 - Items marked **Decided** here, in AGENTS.md, or in a spec's agreed sections
   are settled. Do not relitigate them silently; to change one, propose it
   explicitly and update the doc in the same PR that implements the change.
