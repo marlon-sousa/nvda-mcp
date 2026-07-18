@@ -1,6 +1,19 @@
 # Bridge (NVDA addon) tooling config. The addon itself is built with scons
 # (see sconstruct); this file only configures the linters/type-checker.
 
+[project]
+name = "nvda-mcp-bridge"
+version = "0.0.0"
+# NVDA 2026.1 embeds CPython 3.13; matches the pyright pythonVersion below and
+# silences uv's "No requires-python value found" warning.
+requires-python = ">=3.13"
+dependencies = []
+
+[tool.uv]
+# Built with scons into a .nvda-addon, never pip-installed, so uv manages the
+# dev env but does not try to build/install this project itself.
+package = false
+
 [tool.pytest.ini_options]
 # The bridge domain is stdlib-only and unit-tested headlessly under desktop
 # Python 3.13. tests/conftest.py syncs the shared wire module in and puts the
