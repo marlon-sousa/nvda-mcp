@@ -2,9 +2,19 @@
 
 Implementation contract for ROADMAP lane 1, entry 9 (session C). Authored on
 the entry's branch per process; code starts only after this spec is agreed in
-conversation. Like spec 0004, one spec covers **two sequential PRs** — 9a is
-headless and CI-provable, 9b is the NVDA edge with a live-NVDA checklist —
-and each PR is judged against its slice.
+conversation. Like spec 0004, one spec covers the whole entry, delivered as
+**three sequential PRs**, each judged against its slice:
+
+- **9a** — the connection stack: headless, CI-provable.
+- **9b** — the NVDA adapters: code only, the addon stays inert, judged on
+  review plus the headless suites — no live surface yet.
+- **9c** — plugin wiring, panic gesture, packaging, and the **live-NVDA
+  checklist**.
+
+The 9b/9c split (agreed 2026-07-19) exists to separate review-heavy adapter
+code from checklist iteration: live-checklist findings land as small, visible
+deltas on the small 9c PR — including fixes to 9b's already-merged adapters —
+instead of churning inside one large PR that then needs re-review.
 
 Every NVDA API named here was verified against the reference source
 (`../nvda/source`, 2026.1) before writing, not recalled from memory. In-tree
@@ -16,7 +26,7 @@ adapters use.
 ## Goal
 
 After entry 7 the domain is complete and headless; after this entry a real
-server can dial a real NVDA and run a real session. Two halves:
+server can dial a real NVDA and run a real session. Three slices:
 
 - **9a — the connection stack (headless):** the listening edge — a `Listener`
   seam with a TCP leaf, the `SocketTransport` leaf that spec 0002 designed
@@ -24,10 +34,15 @@ server can dial a real NVDA and run a real session. Two halves:
   observable status that entry 9.1's control dialog will drive (agreed
   2026-07-18, recorded on the board). Proven end-to-end by a real-socket
   headless integration scenario in CI.
-- **9b — the NVDA edge:** the real adapters behind the 7a ports, the
-  `nvdaMcpSpy` synth driver, plugin wiring, the panic gesture, and the
-  packaged build — everything on pyright's ignore list, validated by the
-  manual live-NVDA checklist in the PR body.
+- **9b — the NVDA adapters:** the real adapters behind the 7a ports and the
+  `nvdaMcpSpy` synth driver — the NVDA-importing files on pyright's ignore
+  list, `spy_sink` strict-checked and unit-tested. Nothing is wired: the
+  plugin does not build or start anything, so the addon's behavior when
+  installed is unchanged and the "safe to leave installed" invariant holds
+  trivially.
+- **9c — the switch-on:** `plugin.py` wiring, the panic gesture, the scons
+  package — and the manual live-NVDA checklist in the PR body, which is where
+  the 9b adapters get their live proof.
 
 ## 9a — the connection stack
 
@@ -87,13 +102,13 @@ fake synth is restored, the server returns to `LISTENING`, and a **second**
 dial-and-session succeeds; then `stop()`. pyright strict clean; nothing in 9a
 imports NVDA; no additions to the ignore list.
 
-## 9b — the NVDA edge
+## 9b — the NVDA adapters
 
 ### New files and classes
 
-All `adapters/nvda_*.py` files, `plugin.py`'s growth, and the spy driver go
-on pyright's **ignore list** (hard invariant 4); `spy_sink.py` is pure and
-stays strict-checked and unit-tested.
+All `adapters/nvda_*.py` files and the spy driver go on pyright's **ignore
+list** (hard invariant 4); `spy_sink.py` is pure and stays strict-checked and
+unit-tested. `plugin.py` is untouched in this PR — wiring is 9c.
 
 | File | Role | Collaborators |
 |---|---|---|
@@ -105,8 +120,6 @@ stays strict-checked and unit-tested.
 | `adapters/nvda_synth_swapper.py` | adapter (implements SynthSwapper) | The **Decided** fail-safe design (RFC 0001; AGENTS gotcha): `current_synth()` = `synthDriverHandler.getSynth().name`; `swap_to_spy()` = `setSynth("nvdaMcpSpy")` **plus** `config["speech"]["synth"] = "nvdaMcpSpy"` (so `post_configProfileSwitch` reloads resolve to the spy, `synthDriverHandler.py:566-584`) **plus** a `config.pre_configSave` guard writing the real name into saves **plus** patching `synthDriverHandler.getSynthInstance` (`:474`); returns the real synth's name. `restore()` reverses all four, idempotent — safe unconditionally in the Session's `finally`. |
 | `adapters/nvda_gesture_sender.py` | adapter (implements GestureSender) | `press(id)`: `KeyboardInputGesture.fromName(id)` (`keyboardHandler.py:702`; any raise → `GestureError`), then `inputCore.manager.emulateGesture` (`inputCore.py:705`) marshalled to the main thread via `wx.CallAfter`, the session thread blocking on a `threading.Event` with a timeout (timeout → `GestureError`). NVDA's own injected-key path waits on an injection-done event (`keyboardHandler.py:696-699`), so blocking semantics hold at the OS layer too. |
 | `addon/synthDrivers/nvdaMcpSpy.py` | NVDA synth driver (the spy) | Modeled line-for-line on NVDA's `synthDrivers/silence.py` (SynthDriver subclass: `name`, `description`, `check() -> True`, `supportedSettings = frozenset()`, `_availableVoices`, `speak`, `cancel`): `speak(sequence)` extracts text items → `spy_sink.notify`, and notifies `synthDriverHandler.synthIndexReached` for each `IndexCommand` then `synthDoneSpeaking` (`synthDriverHandler.py:595,599`) so NVDA's speech manager keeps advancing — the determinism silent mode exists for. Imports the sink as `globalPlugins.nvdaMcpBridge.adapters.spy_sink` — legitimate: `addonHandler.Addon.addToPackagePath` extends both `globalPlugins` and `synthDrivers` with the addon's dirs (`addonHandler/__init__.py:718-736`). |
-| `plugin.py` (grows) | the NVDA edge | On init: builds `NvdaAdapterFactory`, `TcpListener` (loopback, `DEFAULT_PORT`), and `BridgeServer` with a session factory closing over `wiring.build_session` (nvda version from `buildVersion.version`; transcripts under `<configPath>/nvdaMcpBridge`); starts the server. `script_panic` (default gesture `kb:NVDA+control+shift+b`, reassignable via Input Gestures): `server.stop()` — which tears down any session and thereby restores the synth — then `ui.message` confirms. `terminate()`: `server.stop()`. |
-
 ### Capabilities become honest
 
 Entry 8 shipped `hello` advertising all six capabilities as a placeholder.
@@ -117,7 +130,32 @@ when it lands the handlers). Small wire-visible change in
 `build_command_registry` + test updates; the schema itself is unchanged (the
 `Capability` enum keeps all six members).
 
-### Manual live-NVDA checklist (copied into the 9b PR body)
+### 9b acceptance criteria
+
+`spy_sink` unit-tested (`tests/unit/adapters/test_spy_sink.py`); registry
+capability-narrowing reflected in `test_hello`/`test_session`/`test_wiring`
+and both integration scenarios; pyright ignore list extended by exactly the
+new NVDA-edge files; all suites and the schema drift gate green (no schema
+change expected); `plugin.py` untouched — installing this build changes no
+NVDA behavior.
+
+## 9c — wiring, panic gesture, packaging + the live checklist
+
+### New files and classes
+
+| File | Role | Collaborators |
+|---|---|---|
+| `plugin.py` (grows) | the NVDA edge | On init: builds `NvdaAdapterFactory`, `TcpListener` (loopback, `DEFAULT_PORT`), and `BridgeServer` with a session factory closing over `wiring.build_session` (nvda version from `buildVersion.version`; transcripts under `<configPath>/nvdaMcpBridge`); starts the server. `script_panic` (default gesture `kb:NVDA+control+shift+b`, reassignable via Input Gestures): `server.stop()` — which tears down any session and thereby restores the synth — then `ui.message` confirms. `terminate()`: `server.stop()`. |
+
+Plus the packaging touches: buildVars/manifest so the scons build contains
+`synthDrivers/nvdaMcpSpy.py` and the synced `protocol.py`.
+
+Checklist findings that require adapter fixes ride this PR as amendments to
+the (already merged) 9b files — small, visible deltas with a one-line why —
+per the process rule; findings that need real iteration become 9.x board
+entries.
+
+### Manual live-NVDA checklist (copied into the 9c PR body)
 
 1. Addon builds (`scons`), installs, NVDA restarts clean; bridge listening
    (verified by a probe `hello` from desktop Python).
@@ -141,13 +179,12 @@ when it lands the handlers). Small wire-visible change in
    synth config intact on next start.
 7. Sequential sessions: run checklist item 2 twice without touching NVDA.
 
-### 9b acceptance criteria (automated part)
+### 9c acceptance criteria
 
-`spy_sink` unit-tested; registry capability-narrowing reflected in
-`test_hello`/`test_session`/`test_wiring`/both integration scenarios; pyright
-ignore list extended by exactly the new NVDA-edge files; all suites and the
-schema drift gate green (no schema change expected); scons build contains
-`synthDrivers/nvdaMcpSpy.py` and the synced `protocol.py`.
+All suites green (the automated surface of this PR is small by design); the
+scons artifact contains `synthDrivers/nvdaMcpSpy.py` and the synced
+`protocol.py`; every checklist box ticked — the `no unchecked checkboxes`
+gate holds the PR until then.
 
 ## Out of scope
 
@@ -162,9 +199,8 @@ schema drift gate green (no schema change expected); scons build contains
 
 ## Definition of done
 
-Two PRs, in order, each green: 9a (connection stack + scenarios), 9b (NVDA
-edge + completed checklist — the `no unchecked checkboxes` gate holds it until
-every box is ticked). The 9b PR flips ROADMAP entry 9 to Done. Amendments
-forced by implementation or the live checklist ride in the same PR with a
-one-line why; checklist findings that need iteration become 9.x board
-entries.
+Three PRs, in order, each green: 9a (connection stack + scenarios), 9b (NVDA
+adapters, addon still inert), 9c (wiring + packaging + completed checklist).
+The 9c PR flips ROADMAP entry 9 to Done. Amendments forced by implementation
+or the live checklist ride in the PR that hits them, with a one-line why;
+checklist findings that need real iteration become 9.x board entries.
