@@ -103,8 +103,11 @@ a headless B follow-up) and amended the scope of entries 9 and 12.
    (agreed 2026-07-18). Needs live NVDA with Marlon at the keyboard; results
    recorded as a checklist in the PR body. Spec:
    [0007-bridge-nvda-edge.md](specs/0007-bridge-nvda-edge.md) (rides on
-   branch `entry-9-bridge-nvda`, awaiting agreement; two PRs — 9a headless
-   connection stack, 9b NVDA edge). Scope sketch: RFC 0001 milestones 1–3;
+   branch `entry-9-bridge-nvda`, agreed 2026-07-19; three PRs — 9a headless
+   connection stack, 9b NVDA adapters with the addon still inert, 9c wiring +
+   panic gesture + packaging + the live checklist — split agreed 2026-07-19
+   to keep checklist iteration on a small final PR). Scope sketch: RFC 0001
+   milestones 1–3;
    the fail-safe synth restoration design (config name swap, `pre_configSave`
    guard, `getSynthInstance` patch) is already **Decided** in RFC 0001.
 9.1. C follow-up, bridge control UI + connection config (agreed 2026-07-18):
