@@ -38,7 +38,7 @@ asyncio MCP server.
 
 | Dir | What | Host / Python |
 |---|---|---|
-| `shared/` | Canonical **stdlib-only** wire protocol (`nvda-mcp-wire`). Envelope + per-command dataclasses + `from_dict` validator + JSON-lines helpers. Unit-tested once. | desktop CPython |
+| `shared/` | Canonical **stdlib-only** wire protocol (`nvda-mcp-wire`). Envelope + per-command dataclasses + `from_dict` validator + JSON-lines helpers, plus `schema.py` (generates the published `specs/wire/v1/schema.json` from the dataclasses; **not** synced into the addon). Unit-tested once. | desktop CPython |
 | `mcpServer/` | The MCP server (`nvda-mcp`): MCP tool → bridge command → result. FastMCP/stdio. | desktop CPython ≥3.11 |
 | `bridgeAddon/` | The NVDA addon, built with scons. Inert until a session connects. | NVDA's embedded CPython 3.13 |
 | `specs/` | Numbered design specs (RFC-style `NNNN-title.md`). | — |

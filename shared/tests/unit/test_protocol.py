@@ -256,13 +256,69 @@ def test_command_set_matches_plan_v1() -> None:
 def test_hello_result_serializes_all_fields() -> None:
 	hr = p.HelloResult(
 		protocolVersion=1,
-		nvdaVersion="2026.1.0",
+		reader=p.ReaderInfo(name="nvda", version="2026.1.0"),
+		capabilities=[p.Capability.SPEECH, p.Capability.GESTURES],
 		mode=p.CaptureMode.SILENT,
 		synth="oneCore",
 		logPath=r"C:\x\session.log",
 	)
 	d = p.to_dict(hr)
-	assert set(d) == {"protocolVersion", "nvdaVersion", "mode", "synth", "logPath"}
+	assert set(d) == {"protocolVersion", "reader", "capabilities", "mode", "synth", "logPath"}
+	# The nested ReaderInfo serializes to a plain dict; StrEnum members to strings.
+	assert d["reader"] == {"name": "nvda", "version": "2026.1.0"}
+	assert d["capabilities"] == ["speech", "gestures"]
+
+
+def test_hello_result_round_trips_reader_and_capabilities() -> None:
+	original = p.HelloResult(
+		protocolVersion=1,
+		reader=p.ReaderInfo(name="nvda", version="2026.1.0"),
+		capabilities=list(p.Capability),
+		mode=p.CaptureMode.LIVE,
+		synth="oneCore",
+		logPath="/x/session.log",
+	)
+	restored = p.from_dict(p.HelloResult, p.decode_message(p.encode_message(original)))
+	assert restored == original
+	assert isinstance(restored.reader, p.ReaderInfo)
+	assert all(isinstance(c, p.Capability) for c in restored.capabilities)
+
+
+def test_capabilities_cover_one_per_command_group() -> None:
+	assert {c.value for c in p.Capability} == {
+		"speech",
+		"braille",
+		"gestures",
+		"focus",
+		"state",
+		"config",
+	}
+
+
+def test_from_dict_rejects_unknown_capability() -> None:
+	with pytest.raises(p.ValidationError, match="not a valid Capability"):
+		p.from_dict(
+			p.HelloResult,
+			{
+				"protocolVersion": 1,
+				"reader": {"name": "nvda", "version": "x"},
+				"capabilities": ["speech", "telepathy"],
+				"mode": "live",
+				"synth": "oneCore",
+				"logPath": "/x",
+			},
+		)
+
+
+def test_command_shapes_cover_every_command() -> None:
+	# The whole point of COMMAND_SHAPES: no command can exist without declared
+	# param/result types, so the generated schema can never miss one.
+	assert set(p.COMMAND_SHAPES) == set(p.Command)
+	for command, shape in p.COMMAND_SHAPES.items():
+		assert shape.result is not None, command
+		# A declared params type is always a dataclass; None means "no params".
+		if shape.params is not None:
+			assert isinstance(shape.params, type)
 
 
 @pytest.mark.parametrize(

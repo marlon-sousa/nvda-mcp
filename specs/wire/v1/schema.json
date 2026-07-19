@@ -1,0 +1,583 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "nvda-mcp wire protocol",
+  "protocolVersion": 1,
+  "$defs": {
+    "AckResult": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true
+    },
+    "BrailleResult": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "fromIndex": {
+          "type": "integer"
+        },
+        "toIndex": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "text",
+        "fromIndex",
+        "toIndex"
+      ],
+      "additionalProperties": true
+    },
+    "ConfigResult": {
+      "type": "object",
+      "properties": {
+        "value": {}
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": true
+    },
+    "EchoParams": {
+      "type": "object",
+      "properties": {
+        "payload": {}
+      },
+      "required": [
+        "payload"
+      ],
+      "additionalProperties": true
+    },
+    "EchoResult": {
+      "type": "object",
+      "properties": {
+        "payload": {}
+      },
+      "required": [
+        "payload"
+      ],
+      "additionalProperties": true
+    },
+    "ErrorInfo": {
+      "type": "object",
+      "properties": {
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "message"
+      ],
+      "additionalProperties": true
+    },
+    "FocusInfoResult": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "states": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "appModule": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "role",
+        "states",
+        "value",
+        "appModule"
+      ],
+      "additionalProperties": true
+    },
+    "GetBrailleParams": {
+      "type": "object",
+      "properties": {
+        "sinceIndex": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "sinceIndex"
+      ],
+      "additionalProperties": true
+    },
+    "GetConfigParams": {
+      "type": "object",
+      "properties": {
+        "keyPath": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "keyPath"
+      ],
+      "additionalProperties": true
+    },
+    "GetSpeechParams": {
+      "type": "object",
+      "properties": {
+        "sinceIndex": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "sinceIndex"
+      ],
+      "additionalProperties": true
+    },
+    "HelloParams": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "silent",
+            "live"
+          ]
+        },
+        "protocolVersion": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "mode",
+        "protocolVersion"
+      ],
+      "additionalProperties": true
+    },
+    "HelloResult": {
+      "type": "object",
+      "properties": {
+        "protocolVersion": {
+          "type": "integer"
+        },
+        "reader": {
+          "$ref": "#/$defs/ReaderInfo"
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "speech",
+              "braille",
+              "gestures",
+              "focus",
+              "state",
+              "config"
+            ]
+          }
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "silent",
+            "live"
+          ]
+        },
+        "synth": {
+          "type": "string"
+        },
+        "logPath": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "reader",
+        "capabilities",
+        "mode",
+        "synth",
+        "logPath"
+      ],
+      "additionalProperties": true
+    },
+    "LastSpeechResult": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "index": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "text",
+        "index"
+      ],
+      "additionalProperties": true
+    },
+    "NextIndexResult": {
+      "type": "object",
+      "properties": {
+        "index": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "index"
+      ],
+      "additionalProperties": true
+    },
+    "PressGestureParams": {
+      "type": "object",
+      "properties": {
+        "gestures": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "gestures"
+      ],
+      "additionalProperties": true
+    },
+    "ReaderInfo": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ],
+      "additionalProperties": true
+    },
+    "Request": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "cmd": {
+          "type": "string"
+        },
+        "params": {
+          "type": "object",
+          "additionalProperties": {}
+        }
+      },
+      "required": [
+        "id",
+        "cmd"
+      ],
+      "additionalProperties": true
+    },
+    "Response": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "result": {},
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ErrorInfo"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": true
+    },
+    "SetConfigParams": {
+      "type": "object",
+      "properties": {
+        "keyPath": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "value": {}
+      },
+      "required": [
+        "keyPath",
+        "value"
+      ],
+      "additionalProperties": true
+    },
+    "SpeechResult": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "fromIndex": {
+          "type": "integer"
+        },
+        "toIndex": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "text",
+        "fromIndex",
+        "toIndex"
+      ],
+      "additionalProperties": true
+    },
+    "StateResult": {
+      "type": "object",
+      "properties": {
+        "browseMode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "speechMode": {
+          "type": "string"
+        },
+        "sleepMode": {
+          "type": "boolean"
+        },
+        "inputHelp": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "browseMode",
+        "speechMode",
+        "sleepMode",
+        "inputHelp"
+      ],
+      "additionalProperties": true
+    },
+    "WaitForSpeechParams": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "afterIndex": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "timeout": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "additionalProperties": true
+    },
+    "WaitForSpeechResult": {
+      "type": "object",
+      "properties": {
+        "found": {
+          "type": "boolean"
+        },
+        "index": {
+          "type": "integer"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "found",
+        "index",
+        "text"
+      ],
+      "additionalProperties": true
+    },
+    "WaitToFinishParams": {
+      "type": "object",
+      "properties": {
+        "timeout": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": true
+    },
+    "WaitToFinishResult": {
+      "type": "object",
+      "properties": {
+        "finished": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "finished"
+      ],
+      "additionalProperties": true
+    }
+  },
+  "envelope": {
+    "request": {
+      "$ref": "#/$defs/Request"
+    },
+    "response": {
+      "$ref": "#/$defs/Response"
+    }
+  },
+  "commands": {
+    "hello": {
+      "params": {
+        "$ref": "#/$defs/HelloParams"
+      },
+      "result": {
+        "$ref": "#/$defs/HelloResult"
+      }
+    },
+    "ping": {
+      "params": null,
+      "result": {
+        "$ref": "#/$defs/AckResult"
+      }
+    },
+    "echo": {
+      "params": {
+        "$ref": "#/$defs/EchoParams"
+      },
+      "result": {
+        "$ref": "#/$defs/EchoResult"
+      }
+    },
+    "pressGesture": {
+      "params": {
+        "$ref": "#/$defs/PressGestureParams"
+      },
+      "result": {
+        "$ref": "#/$defs/AckResult"
+      }
+    },
+    "getSpeech": {
+      "params": {
+        "$ref": "#/$defs/GetSpeechParams"
+      },
+      "result": {
+        "$ref": "#/$defs/SpeechResult"
+      }
+    },
+    "getLastSpeech": {
+      "params": null,
+      "result": {
+        "$ref": "#/$defs/LastSpeechResult"
+      }
+    },
+    "getNextSpeechIndex": {
+      "params": null,
+      "result": {
+        "$ref": "#/$defs/NextIndexResult"
+      }
+    },
+    "waitForSpeech": {
+      "params": {
+        "$ref": "#/$defs/WaitForSpeechParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WaitForSpeechResult"
+      }
+    },
+    "waitForSpeechToFinish": {
+      "params": {
+        "$ref": "#/$defs/WaitToFinishParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WaitToFinishResult"
+      }
+    },
+    "getBraille": {
+      "params": {
+        "$ref": "#/$defs/GetBrailleParams"
+      },
+      "result": {
+        "$ref": "#/$defs/BrailleResult"
+      }
+    },
+    "getFocusInfo": {
+      "params": null,
+      "result": {
+        "$ref": "#/$defs/FocusInfoResult"
+      }
+    },
+    "getState": {
+      "params": null,
+      "result": {
+        "$ref": "#/$defs/StateResult"
+      }
+    },
+    "getConfig": {
+      "params": {
+        "$ref": "#/$defs/GetConfigParams"
+      },
+      "result": {
+        "$ref": "#/$defs/ConfigResult"
+      }
+    },
+    "setConfig": {
+      "params": {
+        "$ref": "#/$defs/SetConfigParams"
+      },
+      "result": {
+        "$ref": "#/$defs/ConfigResult"
+      }
+    },
+    "bye": {
+      "params": null,
+      "result": {
+        "$ref": "#/$defs/AckResult"
+      }
+    }
+  }
+}

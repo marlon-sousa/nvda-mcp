@@ -84,14 +84,15 @@ a headless B follow-up) and amended the scope of entries 9 and 12.
      command + `EchoHandler`, `wiring.py` (`build_session`), `LoopbackTransport`,
      and the headless wire-level scenario — the integration surface lane 2
      tests against.
-8. B follow-up (headless; added by
+8. **Done (PR #11, 2026-07-18)** — B follow-up (headless; added by
    [spec 0005](specs/0005-multi-reader-direction.md)), wire: the published
-   contract — `hello` announces `reader` (name + version) and `capabilities`,
-   a `COMMAND_SHAPES` table in `protocol.py`, a JSON Schema generated from the
-   dataclasses (`specs/wire/v1/schema.json`) with a CI drift gate, and the
-   hand-written prose semantics doc (`specs/wire/v1/protocol.md`). Spec:
+   contract — `hello` announces `reader` (name + version) and `capabilities`
+   (replacing `nvdaVersion`), a `COMMAND_SHAPES` table in `protocol.py`, a JSON
+   Schema generated from the dataclasses (`specs/wire/v1/schema.json`) with a CI
+   drift gate, and the hand-written prose semantics doc
+   (`specs/wire/v1/protocol.md`). Spec:
    [0006-wire-published-contract.md](specs/0006-wire-published-contract.md)
-   (rides in the implementing PR's branch, awaiting agreement).
+   (rides in the PR).
 9. C, bridge↔NVDA: real NVDA adapters (`adapters/nvda_*.py`),
    `synthDrivers/nvdaMcpSpy.py`, `socket_transport.py` + accept loop, plugin
    wiring, panic gesture, scons build. Real adapters supply the live

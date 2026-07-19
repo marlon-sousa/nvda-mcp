@@ -27,6 +27,16 @@ jobs:
         run: uv run --python 3.13 pytest -q
       - name: Pyright
         run: uv run --python 3.13 pyright
+      # Drift gate: the published JSON Schema is generated from the dataclasses,
+      # so regenerating it must leave the committed file byte-identical. If a
+      # protocol change forgot to regenerate, git diff makes CI red.
+      - name: Wire schema is up to date
+        # bash on purpose: the Windows-runner default shell (PowerShell) re-encodes
+        # redirected stdout (UTF-16 + BOM), which would corrupt the byte compare.
+        shell: bash
+        run: |
+          uv run --python 3.13 python -m nvda_mcp_wire.schema > ../specs/wire/v1/schema.json
+          git diff --exit-code -- ../specs/wire/v1/schema.json
 
   server:
     name: server

@@ -119,7 +119,8 @@ def test_silent_hello_establishes_and_reports() -> None:
 	result = _result(run.responses()[0])
 	assert result["mode"] == "silent"
 	assert result["synth"] == "espeak"
-	assert result["nvdaVersion"] == "2026.1.0"
+	assert result["reader"] == {"name": "nvda", "version": "2026.1.0"}
+	assert result["capabilities"] == [c.value for c in p.Capability]
 	assert result["logPath"] == run.transcript.path
 
 

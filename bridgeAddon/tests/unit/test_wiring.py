@@ -36,7 +36,8 @@ def test_build_session_composes_a_working_stack(tmp_path: Path) -> None:
 	# The reply came back JSON-framed on the transport, decodable to a HelloResult.
 	responses = transport.responses()
 	assert responses[0]["result"]["mode"] == "silent"
-	assert responses[0]["result"]["nvdaVersion"] == "2026.1.0"
+	assert responses[0]["result"]["reader"] == {"name": "nvda", "version": "2026.1.0"}
+	assert responses[0]["result"]["capabilities"] == [c.value for c in p.Capability]
 	assert bytes(transport.outbox).endswith(b"\n")
 	# A real session transcript landed under logs_dir.
 	assert len(list(tmp_path.glob("session-*.log"))) == 1

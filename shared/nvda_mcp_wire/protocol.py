@@ -37,7 +37,11 @@ __all__ = [
 	"PROTOCOL_VERSION",
 	"DEFAULT_PORT",
 	"CaptureMode",
+	"Capability",
 	"Command",
+	"CommandShape",
+	"COMMAND_SHAPES",
+	"ReaderInfo",
 	"ValidationError",
 	"from_dict",
 	"to_dict",
@@ -93,6 +97,25 @@ class CaptureMode(StrEnum):
 	SILENT = "silent"
 	#: Hook ``pre_speechQueued``; the real synth keeps talking.
 	LIVE = "live"
+
+
+class Capability(StrEnum):
+	"""What a connected bridge can do, announced per session in ``hello``.
+
+	One member per command group. A bridge advertises the subset its reader
+	supports — spec 0005 anticipates JAWS lacking braille, TalkBack lacking
+	config — while the NVDA bridge advertises all of them. A consumer **must
+	ignore an unknown capability string** (see ``specs/wire/v1/protocol.md``) so
+	the set can grow without breaking an older peer. ``StrEnum`` so members are
+	their own wire strings, like :class:`CaptureMode`.
+	"""
+
+	SPEECH = "speech"
+	BRAILLE = "braille"
+	GESTURES = "gestures"
+	FOCUS = "focus"
+	STATE = "state"
+	CONFIG = "config"
 
 
 class Command(StrEnum):
@@ -320,10 +343,25 @@ class HelloParams:
 	protocolVersion: int
 
 
+@dataclass(frozen=True)
+class ReaderInfo:
+	"""Which screen reader answered, announced by ``hello``.
+
+	Reader-neutral by design (spec 0005): the server surfaces this to the MCP
+	client so the agent knows *which* reader it is driving — NVDA's browse/focus
+	modes and JAWS's forms mode are different mental models. The NVDA bridge
+	fills ``name="nvda"``.
+	"""
+
+	name: str
+	version: str
+
+
 @dataclass
 class HelloResult:
 	protocolVersion: int
-	nvdaVersion: str
+	reader: ReaderInfo
+	capabilities: list[Capability]
 	mode: CaptureMode
 	synth: str
 	logPath: str
@@ -463,3 +501,42 @@ class AckResult:
 	"""Generic acknowledgement for commands with no payload (ping, bye, ...)."""
 
 	ok: bool = True
+
+
+# --- Command shapes: the contract's own command -> payload-types table --------
+
+
+@dataclass(frozen=True)
+class CommandShape:
+	"""The payload types for one wire command: its ``params`` and ``result``.
+
+	Contract **data**, not just prose: :data:`COMMAND_SHAPES` makes the
+	command→types mapping explicit so the JSON Schema can be *generated* from it
+	(``schema.py``) and so a new command cannot be added without declaring its
+	shapes. ``params`` is ``None`` for a command that carries no parameters.
+	"""
+
+	params: type | None
+	result: type
+
+
+#: Every wire command's param/result types. A test asserts this covers every
+#: :class:`Command` member, so the schema and the contract can never disagree
+#: about which commands exist.
+COMMAND_SHAPES: Final[Mapping[Command, CommandShape]] = {
+	Command.HELLO: CommandShape(HelloParams, HelloResult),
+	Command.PING: CommandShape(None, AckResult),
+	Command.ECHO: CommandShape(EchoParams, EchoResult),
+	Command.PRESS_GESTURE: CommandShape(PressGestureParams, AckResult),
+	Command.GET_SPEECH: CommandShape(GetSpeechParams, SpeechResult),
+	Command.GET_LAST_SPEECH: CommandShape(None, LastSpeechResult),
+	Command.GET_NEXT_SPEECH_INDEX: CommandShape(None, NextIndexResult),
+	Command.WAIT_FOR_SPEECH: CommandShape(WaitForSpeechParams, WaitForSpeechResult),
+	Command.WAIT_FOR_SPEECH_TO_FINISH: CommandShape(WaitToFinishParams, WaitToFinishResult),
+	Command.GET_BRAILLE: CommandShape(GetBrailleParams, BrailleResult),
+	Command.GET_FOCUS_INFO: CommandShape(None, FocusInfoResult),
+	Command.GET_STATE: CommandShape(None, StateResult),
+	Command.GET_CONFIG: CommandShape(GetConfigParams, ConfigResult),
+	Command.SET_CONFIG: CommandShape(SetConfigParams, ConfigResult),
+	Command.BYE: CommandShape(None, AckResult),
+}

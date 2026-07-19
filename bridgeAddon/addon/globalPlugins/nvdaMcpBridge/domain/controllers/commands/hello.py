@@ -22,6 +22,7 @@ from ...entities.speech_buffer import SpeechBuffer
 from .command_handler import CommandError, CommandHandler
 
 if TYPE_CHECKING:
+	from ....protocol import Capability, ReaderInfo
 	from ...ports.adapter_factory import AdapterFactory
 	from .session_context import SessionContext
 
@@ -29,9 +30,15 @@ if TYPE_CHECKING:
 class HelloHandler(CommandHandler):
 	available_before_hello = True
 
-	def __init__(self, factory: AdapterFactory, nvda_version: str) -> None:
+	def __init__(
+		self,
+		factory: AdapterFactory,
+		reader: ReaderInfo,
+		capabilities: list[Capability],
+	) -> None:
 		self._factory = factory
-		self._nvda_version = nvda_version
+		self._reader = reader
+		self._capabilities = capabilities
 
 	def execute(self, ctx: SessionContext, request: protocol.Request) -> Any:
 		params = protocol.from_dict(protocol.HelloParams, request.params)
@@ -64,7 +71,8 @@ class HelloHandler(CommandHandler):
 
 		return protocol.HelloResult(
 			protocolVersion=protocol.PROTOCOL_VERSION,
-			nvdaVersion=self._nvda_version,
+			reader=self._reader,
+			capabilities=self._capabilities,
 			mode=params.mode,
 			synth=synth,
 			logPath=ctx.transcript.path,

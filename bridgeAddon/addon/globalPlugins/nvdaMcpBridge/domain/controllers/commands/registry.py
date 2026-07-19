@@ -38,10 +38,18 @@ if TYPE_CHECKING:
 
 
 def build_command_registry(factory: AdapterFactory, nvda_version: str) -> dict[str, CommandHandler]:
-	"""Construct the command -> handler map for a bridge (one per process)."""
+	"""Construct the command -> handler map for a bridge (one per process).
+
+	This is the NVDA bridge, so it stamps its reader identity here: name
+	``"nvda"``, the version wiring passed, and -- per spec 0005/0006 -- the full
+	set of capabilities (NVDA supports every command group). A partial-capability
+	bridge (JAWS without braille, ...) would advertise a subset instead.
+	"""
+	reader = protocol.ReaderInfo(name="nvda", version=nvda_version)
+	capabilities = list(protocol.Capability)
 	not_implemented = NotImplementedHandler()
 	registry: dict[str, CommandHandler] = {
-		protocol.Command.HELLO: HelloHandler(factory, nvda_version),
+		protocol.Command.HELLO: HelloHandler(factory, reader, capabilities),
 		protocol.Command.BYE: ByeHandler(),
 		protocol.Command.PING: PingHandler(),
 		protocol.Command.ECHO: EchoHandler(),

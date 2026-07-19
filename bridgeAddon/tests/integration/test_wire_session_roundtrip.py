@@ -52,6 +52,9 @@ def test_a_whole_session_over_the_wire(tmp_path: Path) -> None:
 		hello = _read_reply(agent)
 		assert hello["result"]["mode"] == "silent"
 		assert hello["result"]["synth"] == "espeak"
+		# The multi-reader handshake fields arrive over the real wire (entry 8).
+		assert hello["result"]["reader"] == {"name": "nvda", "version": "2026.1.0"}
+		assert hello["result"]["capabilities"] == [c.value for c in p.Capability]
 
 		# Echo an awkward payload -- byte-exact through encode/frame/decode/validate.
 		payload = {"u": "olá café \U0001f600", "nested": [1, 2, {"x": True}], "n": 3.5}
