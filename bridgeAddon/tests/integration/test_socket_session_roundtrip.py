@@ -24,6 +24,7 @@ from nvdaMcpBridge.adapters.bridge_server import BridgeServer, ServerState
 from nvdaMcpBridge.adapters.json_lines_channel import JsonLinesChannel
 from nvdaMcpBridge.adapters.socket_transport import SocketTransport
 from nvdaMcpBridge.adapters.tcp_listener import TcpListener
+from nvdaMcpBridge.domain.controllers.commands.registry import NVDA_CAPABILITIES
 from nvdaMcpBridge.domain.controllers.session import Session
 from nvdaMcpBridge.domain.ports.message_channel import Timeout
 from nvdaMcpBridge.wiring import build_session
@@ -83,6 +84,7 @@ def test_a_whole_session_over_a_real_socket(tmp_path: Path) -> None:
 			hello = _read_reply(agent)
 			assert hello["result"]["mode"] == "silent"
 			assert hello["result"]["reader"] == {"name": "nvda", "version": "2026.1.0"}
+			assert hello["result"]["capabilities"] == [c.value for c in NVDA_CAPABILITIES]
 
 			payload = {"u": "olá café \U0001f600", "nested": [1, 2, {"x": True}]}
 			agent.write(_request(2, "echo", payload=payload))

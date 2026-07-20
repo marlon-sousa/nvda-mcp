@@ -36,17 +36,29 @@ from .wait_for_speech_to_finish import WaitForSpeechToFinishHandler
 if TYPE_CHECKING:
 	from ...ports.adapter_factory import AdapterFactory
 
+#: The command groups the NVDA bridge actually serves today. ``focus``/``state``/
+#: ``config`` answer NotImplementedHandler until session E, so the bridge does not
+#: announce them -- a consumer must not offer a tool the bridge will only reject
+#: (spec 0007). The ``Capability`` enum still defines all six; session E re-widens
+#: this list when it lands those handlers.
+NVDA_CAPABILITIES: tuple[protocol.Capability, ...] = (
+	protocol.Capability.SPEECH,
+	protocol.Capability.BRAILLE,
+	protocol.Capability.GESTURES,
+)
+
 
 def build_command_registry(factory: AdapterFactory, nvda_version: str) -> dict[str, CommandHandler]:
 	"""Construct the command -> handler map for a bridge (one per process).
 
 	This is the NVDA bridge, so it stamps its reader identity here: name
-	``"nvda"``, the version wiring passed, and -- per spec 0005/0006 -- the full
-	set of capabilities (NVDA supports every command group). A partial-capability
-	bridge (JAWS without braille, ...) would advertise a subset instead.
+	``"nvda"``, the version wiring passed, and the capabilities it actually
+	serves (:data:`NVDA_CAPABILITIES` -- speech/braille/gestures). A
+	partial-capability bridge (JAWS without braille, ...) would advertise a
+	different subset instead.
 	"""
 	reader = protocol.ReaderInfo(name="nvda", version=nvda_version)
-	capabilities = list(protocol.Capability)
+	capabilities = list(NVDA_CAPABILITIES)
 	not_implemented = NotImplementedHandler()
 	registry: dict[str, CommandHandler] = {
 		protocol.Command.HELLO: HelloHandler(factory, reader, capabilities),

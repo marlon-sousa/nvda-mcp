@@ -12,6 +12,7 @@ from support.context import make_context, request
 from nvdaMcpBridge import protocol as p
 from nvdaMcpBridge.domain.controllers.commands.command_handler import CommandError
 from nvdaMcpBridge.domain.controllers.commands.hello import HelloHandler
+from nvdaMcpBridge.domain.controllers.commands.registry import NVDA_CAPABILITIES
 
 
 def _hello(mode: str, version: int = p.PROTOCOL_VERSION) -> p.Request:
@@ -19,8 +20,9 @@ def _hello(mode: str, version: int = p.PROTOCOL_VERSION) -> p.Request:
 
 
 def _handler(factory: FakeAdapterFactory, version: str = "2026.1.0") -> HelloHandler:
-	# The bridge stamps its NVDA identity + full capability set (as wiring does).
-	return HelloHandler(factory, p.ReaderInfo(name="nvda", version=version), list(p.Capability))
+	# The bridge stamps its NVDA identity + the capabilities it serves (as wiring
+	# does): speech/braille/gestures, not the full enum -- see NVDA_CAPABILITIES.
+	return HelloHandler(factory, p.ReaderInfo(name="nvda", version=version), list(NVDA_CAPABILITIES))
 
 
 def test_silent_hello_builds_swaps_and_reports(clock: FakeClock) -> None:
@@ -39,7 +41,7 @@ def test_silent_hello_builds_swaps_and_reports(clock: FakeClock) -> None:
 	assert result.mode is p.CaptureMode.SILENT
 	assert result.synth == "espeak"
 	assert result.reader == p.ReaderInfo(name="nvda", version="2026.1.0")
-	assert result.capabilities == list(p.Capability)
+	assert result.capabilities == list(NVDA_CAPABILITIES)
 	assert result.logPath == transcript.path
 
 	assert transcript.events[:3] == [

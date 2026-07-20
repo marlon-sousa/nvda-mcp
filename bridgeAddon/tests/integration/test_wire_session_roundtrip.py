@@ -20,6 +20,7 @@ from fakes.loopback_transport import loopback_pair
 
 from nvdaMcpBridge import protocol as p
 from nvdaMcpBridge.adapters.json_lines_channel import JsonLinesChannel
+from nvdaMcpBridge.domain.controllers.commands.registry import NVDA_CAPABILITIES
 from nvdaMcpBridge.domain.ports.message_channel import Timeout
 from nvdaMcpBridge.wiring import build_session
 
@@ -54,7 +55,7 @@ def test_a_whole_session_over_the_wire(tmp_path: Path) -> None:
 		assert hello["result"]["synth"] == "espeak"
 		# The multi-reader handshake fields arrive over the real wire (entry 8).
 		assert hello["result"]["reader"] == {"name": "nvda", "version": "2026.1.0"}
-		assert hello["result"]["capabilities"] == [c.value for c in p.Capability]
+		assert hello["result"]["capabilities"] == [c.value for c in NVDA_CAPABILITIES]
 
 		# Echo an awkward payload -- byte-exact through encode/frame/decode/validate.
 		payload = {"u": "olá café \U0001f600", "nested": [1, 2, {"x": True}], "n": 3.5}
