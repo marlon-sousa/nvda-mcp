@@ -16,6 +16,7 @@ from fakes.adapter_factory import FakeAdapterFactory
 from fakes.transport import FakeTransport
 
 from nvdaMcpBridge import protocol as p
+from nvdaMcpBridge.domain.controllers.commands.registry import NVDA_CAPABILITIES
 from nvdaMcpBridge.domain.controllers.session import Session
 from nvdaMcpBridge.wiring import build_session
 
@@ -37,7 +38,7 @@ def test_build_session_composes_a_working_stack(tmp_path: Path) -> None:
 	responses = transport.responses()
 	assert responses[0]["result"]["mode"] == "silent"
 	assert responses[0]["result"]["reader"] == {"name": "nvda", "version": "2026.1.0"}
-	assert responses[0]["result"]["capabilities"] == [c.value for c in p.Capability]
+	assert responses[0]["result"]["capabilities"] == [c.value for c in NVDA_CAPABILITIES]
 	assert bytes(transport.outbox).endswith(b"\n")
 	# A real session transcript landed under logs_dir.
 	assert len(list(tmp_path.glob("session-*.log"))) == 1

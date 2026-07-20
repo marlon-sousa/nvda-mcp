@@ -10,7 +10,16 @@ from __future__ import annotations
 from fakes.adapter_factory import FakeAdapterFactory
 
 from nvdaMcpBridge import protocol as p
-from nvdaMcpBridge.domain.controllers.commands.registry import build_command_registry
+from nvdaMcpBridge.domain.controllers.commands.registry import NVDA_CAPABILITIES, build_command_registry
+
+
+def test_announced_capabilities_are_only_what_is_served() -> None:
+	# focus/state/config answer NotImplementedHandler until session E, so the
+	# bridge must not announce them -- a consumer must not be offered a tool that
+	# the bridge will only reject (spec 0007). The enum still defines all six.
+	assert NVDA_CAPABILITIES == (p.Capability.SPEECH, p.Capability.BRAILLE, p.Capability.GESTURES)
+	unserved = {p.Capability.FOCUS, p.Capability.STATE, p.Capability.CONFIG}
+	assert unserved.isdisjoint(NVDA_CAPABILITIES)
 
 
 def test_every_wire_command_has_a_handler() -> None:

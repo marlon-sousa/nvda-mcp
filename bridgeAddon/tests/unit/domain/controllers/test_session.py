@@ -27,7 +27,7 @@ from fakes.transcript import FakeTranscript
 
 from nvdaMcpBridge import protocol as p
 from nvdaMcpBridge.domain.controllers.commands.command_handler import CommandError, CommandHandler
-from nvdaMcpBridge.domain.controllers.commands.registry import build_command_registry
+from nvdaMcpBridge.domain.controllers.commands.registry import NVDA_CAPABILITIES, build_command_registry
 from nvdaMcpBridge.domain.controllers.session import Session, SessionConfig, TeardownReason
 
 
@@ -120,7 +120,7 @@ def test_silent_hello_establishes_and_reports() -> None:
 	assert result["mode"] == "silent"
 	assert result["synth"] == "espeak"
 	assert result["reader"] == {"name": "nvda", "version": "2026.1.0"}
-	assert result["capabilities"] == [c.value for c in p.Capability]
+	assert result["capabilities"] == [c.value for c in NVDA_CAPABILITIES]
 	assert result["logPath"] == run.transcript.path
 
 
