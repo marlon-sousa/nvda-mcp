@@ -49,6 +49,9 @@ class HelloHandler(CommandHandler):
 				f"client sent {params.protocolVersion}"
 			)
 		ctx.transcript.open()
+		# Capture is always on (spec 0009); logLevel, if set, additionally bumps
+		# NVDA's own verbosity for the session -- restored at teardown.
+		ctx.log_capture.start(params.logLevel)
 		adapters = self._factory.build(params.mode)
 		# Installed before starting capture, so teardown can stop the sources even
 		# if a start() below raises.
@@ -76,4 +79,5 @@ class HelloHandler(CommandHandler):
 			mode=params.mode,
 			synth=synth,
 			logPath=ctx.transcript.path,
+			nvdaLogPath=ctx.log_capture.path,
 		)

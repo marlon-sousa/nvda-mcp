@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from fakes.announcer import FakeAnnouncer
+from fakes.log_capture import FakeLogCapture
 from fakes.transcript import FakeTranscript
 
 from nvdaMcpBridge import protocol as p
@@ -45,6 +46,7 @@ def make_context(
 	adapters: AdapterSet | None = None,
 	close: RecordingClose | None = None,
 	announcer: FakeAnnouncer | None = None,
+	log_capture: FakeLogCapture | None = None,
 ) -> SessionContext:
 	"""Build a SessionContext for a handler test, seeded with only what it needs."""
 	ctx = SessionContext(
@@ -52,6 +54,7 @@ def make_context(
 		transcript or FakeTranscript(),
 		close or RecordingClose(),
 		announcer or FakeAnnouncer(),
+		log_capture or FakeLogCapture(),
 	)
 	ctx.speech = speech
 	ctx.braille = braille

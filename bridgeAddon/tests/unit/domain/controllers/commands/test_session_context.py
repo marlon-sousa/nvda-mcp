@@ -6,6 +6,7 @@ from __future__ import annotations
 import pytest
 from fakes.announcer import FakeAnnouncer
 from fakes.clock import FakeClock
+from fakes.log_capture import FakeLogCapture
 from fakes.transcript import FakeTranscript
 from support.context import RecordingClose, speech_with
 
@@ -14,12 +15,12 @@ from nvdaMcpBridge.domain.controllers.teardown_reason import TeardownReason
 
 
 def _bare(clock: FakeClock) -> SessionContext:
-	return SessionContext(clock, FakeTranscript(), RecordingClose(), FakeAnnouncer())
+	return SessionContext(clock, FakeTranscript(), RecordingClose(), FakeAnnouncer(), FakeLogCapture())
 
 
 def test_close_delegates_the_reason(clock: FakeClock) -> None:
 	close = RecordingClose()
-	ctx = SessionContext(clock, FakeTranscript(), close, FakeAnnouncer())
+	ctx = SessionContext(clock, FakeTranscript(), close, FakeAnnouncer(), FakeLogCapture())
 	ctx.close(TeardownReason.CLIENT_BYE)
 	assert close.reasons == [TeardownReason.CLIENT_BYE]
 

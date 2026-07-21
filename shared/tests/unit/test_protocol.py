@@ -262,9 +262,18 @@ def test_hello_result_serializes_all_fields() -> None:
 		mode=p.CaptureMode.SILENT,
 		synth="oneCore",
 		logPath=r"C:\x\session.log",
+		nvdaLogPath=r"C:\x\nvda-log.log",
 	)
 	d = p.to_dict(hr)
-	assert set(d) == {"protocolVersion", "reader", "capabilities", "mode", "synth", "logPath"}
+	assert set(d) == {
+		"protocolVersion",
+		"reader",
+		"capabilities",
+		"mode",
+		"synth",
+		"logPath",
+		"nvdaLogPath",
+	}
 	# The nested ReaderInfo serializes to a plain dict; StrEnum members to strings.
 	assert d["reader"] == {"name": "nvda", "version": "2026.1.0"}
 	assert d["capabilities"] == ["speech", "gestures"]
@@ -278,6 +287,7 @@ def test_hello_result_round_trips_reader_and_capabilities() -> None:
 		mode=p.CaptureMode.LIVE,
 		synth="oneCore",
 		logPath="/x/session.log",
+		nvdaLogPath="/x/nvda-log.log",
 	)
 	restored = p.from_dict(p.HelloResult, p.decode_message(p.encode_message(original)))
 	assert restored == original
@@ -308,8 +318,31 @@ def test_from_dict_rejects_unknown_capability() -> None:
 				"mode": "live",
 				"synth": "oneCore",
 				"logPath": "/x",
+				"nvdaLogPath": "/x/nvda-log.log",
 			},
 		)
+
+
+# --- LogLevel / hello logLevel ------------------------------------------------
+
+
+def test_log_levels_match_nvdas_own_valid_values() -> None:
+	assert {m.value for m in p.LogLevel} == {"debug", "io", "debugwarning", "info"}
+
+
+def test_hello_params_default_log_level_is_none() -> None:
+	hp = p.from_dict(p.HelloParams, {"mode": "silent", "protocolVersion": 1})
+	assert hp.logLevel is None
+
+
+def test_hello_params_accepts_a_requested_log_level() -> None:
+	hp = p.from_dict(p.HelloParams, {"mode": "silent", "protocolVersion": 1, "logLevel": "debug"})
+	assert hp.logLevel is p.LogLevel.DEBUG
+
+
+def test_hello_params_rejects_an_unknown_log_level() -> None:
+	with pytest.raises(p.ValidationError, match="not a valid LogLevel"):
+		p.from_dict(p.HelloParams, {"mode": "silent", "protocolVersion": 1, "logLevel": "verbose"})
 
 
 def test_command_shapes_cover_every_command() -> None:

@@ -14,6 +14,7 @@ from pathlib import Path
 
 from fakes.adapter_factory import FakeAdapterFactory
 from fakes.announcer import FakeAnnouncer
+from fakes.log_capture import FakeLogCapture
 from fakes.session_signals import FakeSessionSignals
 from fakes.transport import FakeTransport
 
@@ -30,7 +31,10 @@ def test_build_session_composes_a_working_stack(tmp_path: Path) -> None:
 	transport = FakeTransport([hello], on_empty="closed")
 	factory = FakeAdapterFactory()
 
-	session = build_session(transport, factory, tmp_path, "2026.1.0", FakeSessionSignals(), FakeAnnouncer())
+	log_capture = FakeLogCapture()
+	session = build_session(
+		transport, factory, tmp_path, "2026.1.0", FakeSessionSignals(), FakeAnnouncer(), log_capture
+	)
 	assert isinstance(session, Session)
 	session.run()
 
@@ -41,6 +45,9 @@ def test_build_session_composes_a_working_stack(tmp_path: Path) -> None:
 	assert responses[0]["result"]["mode"] == "silent"
 	assert responses[0]["result"]["reader"] == {"name": "nvda", "version": "2026.1.0"}
 	assert responses[0]["result"]["capabilities"] == [c.value for c in NVDA_CAPABILITIES]
+	assert responses[0]["result"]["nvdaLogPath"] == log_capture.path
 	assert bytes(transport.outbox).endswith(b"\n")
 	# A real session transcript landed under logs_dir.
 	assert len(list(tmp_path.glob("session-*.log"))) == 1
+	# hello started capture, and teardown (the transport ran out) stopped it.
+	assert log_capture.events == [("start", None), ("stop",)]

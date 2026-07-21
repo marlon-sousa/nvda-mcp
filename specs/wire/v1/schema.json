@@ -182,6 +182,22 @@
         },
         "protocolVersion": {
           "type": "integer"
+        },
+        "logLevel": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "debug",
+                "io",
+                "debugwarning",
+                "info"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -226,6 +242,9 @@
         },
         "logPath": {
           "type": "string"
+        },
+        "nvdaLogPath": {
+          "type": "string"
         }
       },
       "required": [
@@ -234,7 +253,8 @@
         "capabilities",
         "mode",
         "synth",
-        "logPath"
+        "logPath",
+        "nvdaLogPath"
       ],
       "additionalProperties": true
     },

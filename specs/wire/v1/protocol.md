@@ -66,6 +66,14 @@ Fault handling, all of which keep the session alive once established (§3):
 2. `hello` params carry the server's `protocolVersion` and the requested capture
    `mode` (§4). The bridge requires `protocolVersion` to **equal** its own; a
    mismatch fails the handshake with an error response and the session ends.
+   An optional `logLevel` (one of `debug`, `io`, `debugwarning`, `info` —
+   NVDA's own valid logging levels) temporarily raises the reader's log
+   verbosity for the session; omitted or absent leaves it unchanged. **This is
+   a real, if temporary, change to the reader's own diagnostic logging, not a
+   filter private to the capture file** — a logger only hands a record to any
+   handler once it has decided to emit the record at all, so a bumped level
+   is visible in the reader's own log too, for the session's duration. It is
+   always restored at teardown, on every exit path.
 3. On success the bridge replies with `HelloResult`:
    - `protocolVersion` (int) — the bridge's version.
    - `reader` (object `{ name, version }`) — **which** screen reader answered
@@ -73,7 +81,12 @@ Fault handling, all of which keep the session alive once established (§3):
    - `capabilities` (array of strings) — what this bridge supports (§4).
    - `mode` — the capture mode now in effect.
    - `synth` — the name of the reader's current speech synthesizer.
-   - `logPath` — absolute path to this session's human-readable transcript.
+   - `logPath` — absolute path to this session's human-readable transcript
+     (the bridge's own record of session events — gestures, speech, open/close).
+   - `nvdaLogPath` — absolute path to this session's capture of the reader's
+     own diagnostic log, scoped to exactly this session (`hello` to
+     teardown) — a different artifact from `logPath`, always populated
+     regardless of whether `logLevel` was requested.
 4. After a successful handshake the session is **tolerant**: a failing command
    yields an error response and the session keeps running. Only the conditions in
    §6 (teardown) end it.

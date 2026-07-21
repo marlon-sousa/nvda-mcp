@@ -8,8 +8,8 @@
 # up in the injected registry, calls handler.execute(ctx, request), and wraps the
 # result (or the error) into a Response.
 # HANDED (by wiring.py): a MessageChannel, a Transcript, a Clock, a SessionConfig,
-#   and the command registry -- ports/config only. It does NOT know the
-#   AdapterFactory; that lives inside the hello handler.
+#   a LogCapture, and the command registry -- ports/config only. It does NOT
+#   know the AdapterFactory; that lives inside the hello handler.
 # BUILDS: the SessionContext handed to every handler (and populated by hello).
 #
 # One loop, one phase flag. Pre-hello only `hello` is accepted and any failure
@@ -35,6 +35,7 @@ from .teardown_reason import TeardownReason
 if TYPE_CHECKING:
 	from ..ports.announcer import Announcer
 	from ..ports.clock import Clock
+	from ..ports.log_capture import LogCapture
 	from ..ports.message_channel import MessageChannel
 	from ..ports.session_signals import SessionSignals
 	from ..ports.transcript import Transcript
@@ -75,6 +76,7 @@ class Session:
 		registry: Mapping[str, CommandHandler],
 		signals: SessionSignals,
 		announcer: Announcer,
+		log_capture: LogCapture,
 	) -> None:
 		self._channel = channel
 		self._transcript = transcript
@@ -82,8 +84,9 @@ class Session:
 		self._config = config
 		self._registry = registry
 		self._signals = signals
+		self._log_capture = log_capture
 
-		self._ctx = SessionContext(clock, transcript, self.request_teardown, announcer)
+		self._ctx = SessionContext(clock, transcript, self.request_teardown, announcer, log_capture)
 		self._state = _State.PRE_HELLO
 
 		# Watchdog bookkeeping (monotonic seconds); seeded in run().
@@ -234,6 +237,9 @@ class Session:
 		self._torn_down = True
 		reason = self._reason if self._reason is not None else TeardownReason.EXTERNAL
 		ctx = self._ctx
+		# First: a bumped log level (if hello requested one) is held no longer
+		# than it must be. Safe even if hello never started capture (or never ran).
+		self._guard(self._log_capture.stop)
 		if ctx.adapters is not None:
 			# Stopping the speech source unregisters the speak() filter (silent
 			# mode), so NVDA's speech flows again at once -- there is no synth to

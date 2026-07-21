@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 	from ...ports.adapter_factory import AdapterSet
 	from ...ports.announcer import Announcer
 	from ...ports.clock import Clock
+	from ...ports.log_capture import LogCapture
 	from ...ports.transcript import Transcript
 	from ..teardown_reason import TeardownReason
 
@@ -39,6 +40,7 @@ class SessionContext:
 		transcript: Transcript,
 		close: Callable[[TeardownReason], None],
 		announcer: Announcer,
+		log_capture: LogCapture,
 	) -> None:
 		self.clock = clock
 		self.transcript = transcript
@@ -47,6 +49,9 @@ class SessionContext:
 		#: speak hints through it (announce), even during silent capture. Always
 		#: present -- it never depends on hello.
 		self.announcer = announcer
+		#: The tee of NVDA's own log for this session (spec 0009). Always present,
+		#: like the transcript; the hello handler starts it.
+		self.log_capture = log_capture
 		# Installed by the hello handler; None before it runs.
 		self.speech: SpeechBuffer | None = None
 		self.braille: BrailleBuffer | None = None

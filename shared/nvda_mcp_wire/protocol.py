@@ -37,6 +37,7 @@ __all__ = [
 	"PROTOCOL_VERSION",
 	"DEFAULT_PORT",
 	"CaptureMode",
+	"LogLevel",
 	"Capability",
 	"Command",
 	"CommandShape",
@@ -98,6 +99,22 @@ class CaptureMode(StrEnum):
 	SILENT = "silent"
 	#: Hook ``pre_speechQueued``; the real synth keeps talking.
 	LIVE = "live"
+
+
+class LogLevel(StrEnum):
+	"""NVDA logging levels a session may request via ``hello``.
+
+	Exactly NVDA's own valid logging-level values (``logHandler.py``), minus
+	``OFF`` -- disabling logging makes no sense to *request* for a debugging
+	session. Requesting one temporarily raises NVDA's own log verbosity for
+	the session's duration (not just the private capture file -- see
+	``specs/wire/v1/protocol.md`` §3), restored at teardown.
+	"""
+
+	DEBUG = "debug"
+	IO = "io"
+	DEBUGWARNING = "debugwarning"
+	INFO = "info"
 
 
 class Capability(StrEnum):
@@ -344,6 +361,10 @@ class Response:
 class HelloParams:
 	mode: CaptureMode
 	protocolVersion: int
+	#: Temporarily raise NVDA's own log verbosity for this session (restored at
+	#: teardown). Unset leaves NVDA's current level alone; capture still happens
+	#: either way (see LogLevel).
+	logLevel: LogLevel | None = None
 
 
 @dataclass(frozen=True)
@@ -368,6 +389,10 @@ class HelloResult:
 	mode: CaptureMode
 	synth: str
 	logPath: str
+	#: Absolute path to this session's NVDA-log capture -- a tee of NVDA's own
+	#: log, scoped to exactly this session (distinct from `logPath`, the
+	#: bridge's own transcript; see spec 0009).
+	nvdaLogPath: str
 
 
 @dataclass

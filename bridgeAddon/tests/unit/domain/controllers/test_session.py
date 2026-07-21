@@ -22,6 +22,7 @@ from fakes.adapter_factory import FakeAdapterFactory
 from fakes.announcer import FakeAnnouncer
 from fakes.clock import FakeClock
 from fakes.command_handler import FakeCommandHandler
+from fakes.log_capture import FakeLogCapture
 from fakes.message_channel import FakeChannel
 from fakes.script import TIMEOUT_EVENT
 from fakes.session_signals import FakeSessionSignals
@@ -55,6 +56,7 @@ class Run:
 	factory: FakeAdapterFactory
 	clock: FakeClock
 	signals: FakeSessionSignals
+	log_capture: FakeLogCapture
 
 	def responses(self) -> list[dict[str, Any]]:
 		return self.channel.responses()
@@ -72,6 +74,7 @@ def run_session(
 	registry: Mapping[str, CommandHandler] | None = None,
 	signals: FakeSessionSignals | None = None,
 	announcer: FakeAnnouncer | None = None,
+	log_capture: FakeLogCapture | None = None,
 	on_empty: str = "closed",
 	timeout_advance: float = 5.0,
 	nvda_version: str = "2026.1.0",
@@ -84,6 +87,7 @@ def run_session(
 	transcript = transcript or FakeTranscript()
 	signals = signals or FakeSessionSignals()
 	announcer = announcer or FakeAnnouncer()
+	log_capture = log_capture or FakeLogCapture()
 	if registry is None:
 		registry = build_command_registry(factory, nvda_version)
 	channel = FakeChannel(events, clock=clock, timeout_advance=timeout_advance, on_empty=on_empty)
@@ -92,7 +96,7 @@ def run_session(
 		heartbeat_timeout=heartbeat_timeout,
 		inactivity_timeout=inactivity_timeout,
 	)
-	session = Session(channel, transcript, clock, config, registry, signals, announcer)
+	session = Session(channel, transcript, clock, config, registry, signals, announcer, log_capture)
 	if start:
 		session.run()
 	return Run(
@@ -102,6 +106,7 @@ def run_session(
 		factory=factory,
 		clock=clock,
 		signals=signals,
+		log_capture=log_capture,
 	)
 
 
@@ -136,6 +141,7 @@ def test_silent_hello_establishes_and_reports() -> None:
 	assert result["reader"] == {"name": "nvda", "version": "2026.1.0"}
 	assert result["capabilities"] == [c.value for c in NVDA_CAPABILITIES]
 	assert result["logPath"] == run.transcript.path
+	assert result["nvdaLogPath"] == run.log_capture.path
 
 
 def test_live_hello_establishes() -> None:
@@ -232,6 +238,24 @@ def test_teardown_is_idempotent_when_called_twice() -> None:
 	run.session._teardown()  # type: ignore[attr-defined]
 	assert run.factory.speech_source.stopped == 1
 	assert run.signals.ended == 1
+	assert run.log_capture.events.count(("stop",)) == 1
+
+
+def test_teardown_stops_log_capture_even_when_it_raises_on_stop() -> None:
+	log_capture = FakeLogCapture(fail_on={"stop"})
+	run = run_session([hello("silent")], log_capture=log_capture)
+	# The stop() raise is guarded, so the rest of teardown still completes.
+	assert run.factory.speech_source.stopped == 1
+	assert run.signals.ended == 1
+	assert run.channel.closed is True
+
+
+def test_log_capture_stop_runs_even_when_hello_never_ran() -> None:
+	# A pre-hello handshake failure never dispatches hello, so start() never
+	# ran -- teardown's stop() call is unconditional regardless (the real
+	# adapter's contract is that stop() is then a no-op; see spec 0009).
+	run = run_session([command("ping", 1)])
+	assert run.log_capture.events == [("stop",)]
 
 
 # -- dispatch mechanics (fake handlers) --------------------------------------
@@ -325,7 +349,9 @@ def test_request_teardown_from_another_thread_ends_the_loop() -> None:
 	registry = build_command_registry(factory, "x")
 	channel = FakeChannel([hello()], clock=clock, on_empty="timeout", timeout_advance=1.0)
 	config = SessionConfig(nvda_version="x", heartbeat_timeout=1e9, inactivity_timeout=1e9)
-	session = Session(channel, transcript, clock, config, registry, signals, FakeAnnouncer())
+	session = Session(
+		channel, transcript, clock, config, registry, signals, FakeAnnouncer(), FakeLogCapture()
+	)
 
 	thread = threading.Thread(target=session.run)
 	thread.start()

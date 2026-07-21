@@ -17,6 +17,7 @@ from typing import Any
 
 from fakes.adapter_factory import FakeAdapterFactory
 from fakes.announcer import FakeAnnouncer
+from fakes.log_capture import FakeLogCapture
 from fakes.loopback_transport import loopback_pair
 from fakes.session_signals import FakeSessionSignals
 
@@ -46,7 +47,8 @@ def test_a_whole_session_over_the_wire(tmp_path: Path) -> None:
 	factory = FakeAdapterFactory(speech={"NVDA+f7": ["Elements list dialog"]})
 	signals = FakeSessionSignals()
 	announcer = FakeAnnouncer()
-	session = build_session(bridge_end, factory, tmp_path, "2026.1.0", signals, announcer)
+	log_capture = FakeLogCapture()
+	session = build_session(bridge_end, factory, tmp_path, "2026.1.0", signals, announcer, log_capture)
 	agent = JsonLinesChannel(agent_end)
 
 	thread = threading.Thread(target=session.run, daemon=True)
@@ -60,6 +62,7 @@ def test_a_whole_session_over_the_wire(tmp_path: Path) -> None:
 		# The multi-reader handshake fields arrive over the real wire (entry 8).
 		assert hello["result"]["reader"] == {"name": "nvda", "version": "2026.1.0"}
 		assert hello["result"]["capabilities"] == [c.value for c in NVDA_CAPABILITIES]
+		assert hello["result"]["nvdaLogPath"] == log_capture.path
 
 		# Echo an awkward payload -- byte-exact through encode/frame/decode/validate.
 		payload = {"u": "olá café \U0001f600", "nested": [1, 2, {"x": True}], "n": 3.5}

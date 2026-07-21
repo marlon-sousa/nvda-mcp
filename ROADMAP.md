@@ -137,6 +137,18 @@ a headless B follow-up) and amended the scope of entries 9 and 12.
    warning + bridge-generated access token presented in `hello`); until then
    the combo shows it disabled. Needs live NVDA (GUI checklist). Spec: none
    yet → specify first, after entry 9's spec.
+9.2. C follow-up, NVDA log capture per session (agreed 2026-07-21): every
+   session tees NVDA's own log to a fresh, session-scoped file for `hello` to
+   teardown, so debugging an add-on no longer needs manual before/after
+   markers in `nvda.log`. `hello` gains an optional `logLevel` to temporarily
+   raise NVDA's own logging verbosity for the session (restored at
+   teardown), alongside the always-on capture. A second, parallel artifact
+   to the existing transcript (spec 0003) — NVDA's real diagnostic log, not
+   the bridge's domain vocabulary. Needs live NVDA (checklist: capture file
+   distinct from `nvda.log`, `logLevel` surfaces DEBUG lines, level restored
+   after teardown). Spec:
+   [0009-nvda-log-capture.md](specs/0009-nvda-log-capture.md) (agreed
+   2026-07-21).
 
 ## Status board — lane 2: server (headless; may run parallel to lane 1)
 

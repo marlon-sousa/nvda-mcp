@@ -29,13 +29,18 @@ from . import protocol
 from .adapters.bridge_server import BridgeServer
 from .adapters.nvda_adapter_factory import NvdaAdapterFactory
 from .adapters.nvda_announcer import NvdaAnnouncer
+from .adapters.nvda_log_capture import NvdaLogCapture
 from .adapters.nvda_session_signals import NvdaSessionSignals
 from .adapters.tcp_listener import TcpListener
 from .wiring import build_session
 
 
-def _transcripts_dir() -> str:
-	"""Where session transcripts land: ``<configPath>/nvdaMcpBridge``."""
+def _bridge_logs_dir() -> str:
+	"""Where session transcripts and NVDA-log captures land: ``<configPath>/nvdaMcpBridge``.
+
+	One directory, two file-prefix families (``session-*.log``,
+	``nvda-log-*.log``) -- each stack's own pruning only ever touches its own.
+	"""
 	return os.path.join(globalVars.appArgs.configPath, "nvdaMcpBridge")
 
 
@@ -55,13 +60,14 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		super().__init__()
 		factory = NvdaAdapterFactory()
 		listener = TcpListener("127.0.0.1", protocol.DEFAULT_PORT)
-		logs_dir = _transcripts_dir()
+		logs_dir = _bridge_logs_dir()
 		nvda_version = buildVersion.version
 		signals = NvdaSessionSignals()
 		announcer = NvdaAnnouncer()
+		log_capture = NvdaLogCapture(logs_dir)
 
 		def make_session(transport):
-			return build_session(transport, factory, logs_dir, nvda_version, signals, announcer)
+			return build_session(transport, factory, logs_dir, nvda_version, signals, announcer, log_capture)
 
 		self._server = BridgeServer(listener, make_session)
 		try:

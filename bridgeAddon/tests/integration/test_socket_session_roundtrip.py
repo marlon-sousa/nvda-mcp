@@ -20,6 +20,7 @@ from typing import Any
 
 from fakes.adapter_factory import FakeAdapterFactory
 from fakes.announcer import FakeAnnouncer
+from fakes.log_capture import FakeLogCapture
 from fakes.session_signals import FakeSessionSignals
 
 from nvdaMcpBridge import protocol as p
@@ -71,7 +72,9 @@ def test_a_whole_session_over_a_real_socket(tmp_path: Path) -> None:
 		# stopped (the filter unregistered) on each teardown.
 		factory = FakeAdapterFactory(speech={"NVDA+f7": ["Elements list dialog"]})
 		factories.append(factory)
-		return build_session(transport, factory, tmp_path, "2026.1.0", FakeSessionSignals(), FakeAnnouncer())
+		return build_session(
+			transport, factory, tmp_path, "2026.1.0", FakeSessionSignals(), FakeAnnouncer(), FakeLogCapture()
+		)
 
 	listener = TcpListener("127.0.0.1", 0)
 	server = BridgeServer(listener, session_factory)
@@ -133,7 +136,13 @@ def test_stop_ends_an_idle_server_promptly(tmp_path: Path) -> None:
 	# the accept poll window, not a client, is what bounds stop().
 	def session_factory(transport: Any) -> Session:
 		return build_session(
-			transport, FakeAdapterFactory(), tmp_path, "2026.1.0", FakeSessionSignals(), FakeAnnouncer()
+			transport,
+			FakeAdapterFactory(),
+			tmp_path,
+			"2026.1.0",
+			FakeSessionSignals(),
+			FakeAnnouncer(),
+			FakeLogCapture(),
 		)
 
 	server = BridgeServer(TcpListener("127.0.0.1", 0), session_factory)
@@ -150,7 +159,13 @@ def test_an_abruptly_reset_client_does_not_kill_the_server(tmp_path: Path) -> No
 	# keep serving -- not let the exception take the accept loop down.
 	def session_factory(transport: Any) -> Session:
 		return build_session(
-			transport, FakeAdapterFactory(), tmp_path, "2026.1.0", FakeSessionSignals(), FakeAnnouncer()
+			transport,
+			FakeAdapterFactory(),
+			tmp_path,
+			"2026.1.0",
+			FakeSessionSignals(),
+			FakeAnnouncer(),
+			FakeLogCapture(),
 		)
 
 	server = BridgeServer(TcpListener("127.0.0.1", 0), session_factory)
