@@ -10,15 +10,13 @@
 # only the two methods BridgeServer calls -- run() and request_teardown() -- and
 # skips Session.__init__ (nothing here reads the lifecycle fields). run() blocks
 # until either request_teardown (stop path) or finish() (a natural bye/EOF end),
-# then restores its swapper in a finally, mirroring the real Session's teardown
-# promise so a test can assert the synth was restored. started lets a test wait
-# for the session to actually be running before it acts.
+# then counts a teardown in a finally -- standing in for the real Session's
+# teardown work (stopping the sources so speech flows again). started lets a test
+# wait for the session to actually be running before it acts.
 
 from __future__ import annotations
 
 import threading
-
-from fakes.synth_swapper import FakeSynthSwapper
 
 from nvdaMcpBridge.domain.controllers.session import Session
 from nvdaMcpBridge.domain.controllers.teardown_reason import TeardownReason
@@ -27,12 +25,12 @@ from nvdaMcpBridge.domain.controllers.teardown_reason import TeardownReason
 class FakeSession(Session):
 	"""A Session whose run() blocks until told to end; records its teardown."""
 
-	def __init__(self, transport: object, *, swapper: FakeSynthSwapper | None = None) -> None:
+	def __init__(self, transport: object) -> None:
 		# Deliberately no super().__init__: BridgeServer only calls run() and
 		# request_teardown(), both overridden below.
 		self.transport = transport
-		self.swapper = swapper if swapper is not None else FakeSynthSwapper()
 		self.teardown_reason: TeardownReason | None = None
+		self.torn_down = 0
 		self.started = threading.Event()
 		self._done = threading.Event()
 
@@ -41,9 +39,10 @@ class FakeSession(Session):
 		try:
 			self._done.wait()
 		finally:
-			# The real Session restores the user's synth on every exit path; the
-			# fake mirrors that so "stop tore the session down" is observable.
-			self.swapper.restore()
+			# The real Session's teardown always runs (stopping capture so speech
+			# resumes); the fake counts it so "stop tore the session down" is
+			# observable.
+			self.torn_down += 1
 
 	def request_teardown(self, reason: TeardownReason) -> None:
 		self.teardown_reason = reason

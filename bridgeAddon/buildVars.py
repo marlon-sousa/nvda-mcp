@@ -41,7 +41,6 @@ The add-on is inert until a session connects: it never swaps your synthesizer or
 # matches every module at any depth (including the top level).
 pythonSources: list[str] = [
 	"addon/globalPlugins/nvdaMcpBridge/**/*.py",
-	"addon/synthDrivers/nvdaMcpSpy.py",
 ]
 i18nSources: list[str] = pythonSources + ["buildVars.py"]
 

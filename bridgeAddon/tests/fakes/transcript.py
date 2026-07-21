@@ -40,12 +40,6 @@ class FakeTranscript(Transcript):
 	def session_opened(self, mode: str, synth: str) -> None:
 		self._record("session_opened", mode, synth)
 
-	def synth_swapped(self, real_synth: str) -> None:
-		self._record("synth_swapped", real_synth)
-
-	def synth_restored(self, real_synth: str) -> None:
-		self._record("synth_restored", real_synth)
-
 	def gesture(self, gesture_id: str) -> None:
 		self._record("gesture", gesture_id)
 

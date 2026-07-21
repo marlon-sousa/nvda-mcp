@@ -10,8 +10,8 @@
 #
 # Everything here is a formatting decision: one timestamped line per event, so a
 # tester can reconstruct a silent run -- gestures interleaved with the speech
-# they produced, plus session open/close and the synth swap/restore. The IO
-# lives one layer down, in the leaf.
+# they produced, plus session open/close. The IO lives one layer down, in the
+# leaf.
 
 from __future__ import annotations
 
@@ -63,12 +63,6 @@ class FileTranscript(Transcript):
 
 	def session_opened(self, mode: str, synth: str) -> None:
 		self._line(f"SESSION OPEN mode={mode} synth={synth}")
-
-	def synth_swapped(self, real_synth: str) -> None:
-		self._line(f"SYNTH SWAP in=nvdaMcpSpy saved={real_synth}")
-
-	def synth_restored(self, real_synth: str) -> None:
-		self._line(f"SYNTH RESTORE -> {real_synth}")
 
 	def gesture(self, gesture_id: str) -> None:
 		self._line(f"GESTURE {gesture_id}")

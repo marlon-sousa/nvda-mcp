@@ -27,6 +27,8 @@ if TYPE_CHECKING:
 
 	from .adapters.ports.transport import Transport
 	from .domain.ports.adapter_factory import AdapterFactory
+	from .domain.ports.announcer import Announcer
+	from .domain.ports.session_signals import SessionSignals
 
 
 def build_session(
@@ -34,6 +36,8 @@ def build_session(
 	factory: AdapterFactory,
 	logs_dir: str | os.PathLike[str],
 	nvda_version: str,
+	signals: SessionSignals,
+	announcer: Announcer,
 	*,
 	heartbeat_timeout: float = 30.0,
 	inactivity_timeout: float = 120.0,
@@ -42,7 +46,9 @@ def build_session(
 
 	Opens a fresh session transcript under ``logs_dir``, wraps ``transport`` in
 	the JSON-lines channel, builds the command registry (whose hello handler
-	holds ``factory``), and hands the Session its ports.
+	holds ``factory``), and hands the Session its ports -- including the session
+	``signals`` (start/end beeps) and the ``announcer`` (the bridge's line to the
+	real synth, for the hello synth name and the announce hint channel).
 	"""
 	transcript = create_session_log(logs_dir)
 	channel = JsonLinesChannel(transport)
@@ -53,4 +59,4 @@ def build_session(
 		heartbeat_timeout=heartbeat_timeout,
 		inactivity_timeout=inactivity_timeout,
 	)
-	return Session(channel, transcript, clock, config, registry)
+	return Session(channel, transcript, clock, config, registry, signals, announcer)

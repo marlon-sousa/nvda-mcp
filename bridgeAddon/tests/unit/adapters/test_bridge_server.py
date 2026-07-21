@@ -150,7 +150,7 @@ def test_stop_during_an_active_session_tears_it_down() -> None:
 	server.stop()
 
 	assert session.teardown_reason is TeardownReason.EXTERNAL
-	assert session.swapper.restores == 1  # the session's teardown promise ran
+	assert session.torn_down == 1  # the session's teardown promise ran
 	assert server.status == ServerStatus(ServerState.STOPPED, None)
 
 

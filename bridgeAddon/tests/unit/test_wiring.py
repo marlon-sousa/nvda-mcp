@@ -13,6 +13,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from fakes.adapter_factory import FakeAdapterFactory
+from fakes.announcer import FakeAnnouncer
+from fakes.session_signals import FakeSessionSignals
 from fakes.transport import FakeTransport
 
 from nvdaMcpBridge import protocol as p
@@ -28,7 +30,7 @@ def test_build_session_composes_a_working_stack(tmp_path: Path) -> None:
 	transport = FakeTransport([hello], on_empty="closed")
 	factory = FakeAdapterFactory()
 
-	session = build_session(transport, factory, tmp_path, "2026.1.0")
+	session = build_session(transport, factory, tmp_path, "2026.1.0", FakeSessionSignals(), FakeAnnouncer())
 	assert isinstance(session, Session)
 	session.run()
 

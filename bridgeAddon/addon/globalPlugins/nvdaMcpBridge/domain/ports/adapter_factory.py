@@ -4,8 +4,11 @@
 # ROLE: domain port. Builds the mode-specific collaborators, once, after hello.
 # USED BY: the Session controller.
 # IMPLEMENTED BY: adapters/nvda_adapter_factory.py in session C (chooses the
-#                 silent vs live speech source, wires the NVDA-backed swapper /
-#                 gesture sender); tests/fakes/adapter_factory.py.
+#                 silent vs live speech source, plus the braille source and
+#                 gesture sender); tests/fakes/adapter_factory.py. There is no
+#                 synth swapper: silent mode suppresses NVDA's speak() output and
+#                 leaves the real synth loaded (see nvda_silent_speech_source),
+#                 so the synth is never swapped.
 #
 # Why a factory at all: the capture mode is only known once the client's ``hello``
 # arrives (AGENTS.md, Decided -- no configure-after-construction). So wiring.py
@@ -22,16 +25,14 @@ from ... import protocol
 from .braille_source import BrailleSource
 from .gesture_sender import GestureSender
 from .speech_source import SpeechSource
-from .synth_swapper import SynthSwapper
 
 
 @dataclass(frozen=True)
 class AdapterSet:
-	"""The four mode-specific collaborators the Session drives during a session."""
+	"""The mode-specific collaborators the Session drives during a session."""
 
 	speech_source: SpeechSource
 	braille_source: BrailleSource
-	synth_swapper: SynthSwapper
 	gesture_sender: GestureSender
 
 

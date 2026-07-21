@@ -16,7 +16,9 @@ from pathlib import Path
 from typing import Any
 
 from fakes.adapter_factory import FakeAdapterFactory
+from fakes.announcer import FakeAnnouncer
 from fakes.loopback_transport import loopback_pair
+from fakes.session_signals import FakeSessionSignals
 
 from nvdaMcpBridge import protocol as p
 from nvdaMcpBridge.adapters.json_lines_channel import JsonLinesChannel
@@ -42,7 +44,9 @@ def _read_reply(agent: JsonLinesChannel, timeout: float = 5.0) -> dict[str, Any]
 def test_a_whole_session_over_the_wire(tmp_path: Path) -> None:
 	bridge_end, agent_end = loopback_pair()
 	factory = FakeAdapterFactory(speech={"NVDA+f7": ["Elements list dialog"]})
-	session = build_session(bridge_end, factory, tmp_path, "2026.1.0")
+	signals = FakeSessionSignals()
+	announcer = FakeAnnouncer()
+	session = build_session(bridge_end, factory, tmp_path, "2026.1.0", signals, announcer)
 	agent = JsonLinesChannel(agent_end)
 
 	thread = threading.Thread(target=session.run, daemon=True)
@@ -65,16 +69,24 @@ def test_a_whole_session_over_the_wire(tmp_path: Path) -> None:
 		# Scripted gesture -> speech -> wait-to-finish -> read it back.
 		agent.write(_request(3, "pressGesture", gestures=["NVDA+f7"]))
 		assert _read_reply(agent)["result"] == {"ok": True}
-		agent.write(_request(4, "waitForSpeechToFinish", timeout=1.0))
-		assert _read_reply(agent)["result"]["finished"] is True
+		# Silent mode has no exact finish now (the synth is untouched), so this
+		# resolves on the buffer's ~1s elapsed heuristic -- give it room.
+		agent.write(_request(4, "waitForSpeechToFinish", timeout=3.0))
+		assert _read_reply(agent, timeout=6.0)["result"]["finished"] is True
 		agent.write(_request(5, "getSpeech", sinceIndex=0))
 		assert "Elements list dialog" in _read_reply(agent)["result"]["text"]
 
-		# Bye -> ack, then teardown restores the (fake) synth.
-		agent.write(_request(6, "bye"))
+		# Announce a hint through the (fake) synth -- bridge->human channel.
+		agent.write(_request(6, "announce", text="pressing bye now"))
+		assert _read_reply(agent)["result"] == {"ok": True}
+
+		# Bye -> ack, then teardown stops capture (speech would flow again).
+		agent.write(_request(7, "bye"))
 		assert _read_reply(agent)["result"] == {"ok": True}
 	finally:
 		thread.join(timeout=5.0)
 
 	assert not thread.is_alive()
-	assert factory.synth_swapper.restores == 1
+	assert factory.speech_source.stopped == 1
+	assert signals.started == 1 and signals.ended == 1
+	assert announcer.announced == ["pressing bye now"]

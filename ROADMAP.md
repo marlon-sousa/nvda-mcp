@@ -93,23 +93,35 @@ a headless B follow-up) and amended the scope of entries 9 and 12.
    (`specs/wire/v1/protocol.md`). Spec:
    [0006-wire-published-contract.md](specs/0006-wire-published-contract.md)
    (rides in the PR).
-9. C, bridge↔NVDA: real NVDA adapters (`adapters/nvda_*.py`),
-   `synthDrivers/nvdaMcpSpy.py`, `socket_transport.py` + accept loop, plugin
-   wiring, panic gesture, scons build. Real adapters supply the live
-   `reader`/`capabilities` values for the `hello` fields entry 8 adds. The
-   listener must be designed as a **start/stop lifecycle controller** with
+9. **Done** — C, bridge↔NVDA: real NVDA adapters (`adapters/nvda_*.py`),
+   `synthDrivers/nvdaMcpSpy.py`, the `socket_transport.py`/`tcp_listener.py`
+   accept stack, plugin wiring, panic gesture, scons build. Real adapters supply
+   the live `reader`/`capabilities` values for the `hello` fields entry 8 adds.
+   The listener is a **start/stop lifecycle controller** (`BridgeServer`) with
    observable status (stopped / listening on endpoint / session active) — the
    seam entry 9.1's control dialog drives — not a fire-and-forget loop
-   (agreed 2026-07-18). Needs live NVDA with Marlon at the keyboard; results
-   recorded as a checklist in the PR body. Spec:
-   [0007-bridge-nvda-edge.md](specs/0007-bridge-nvda-edge.md) (rides on
-   branch `entry-9-bridge-nvda`, agreed 2026-07-19; three PRs — 9a headless
-   connection stack, 9b NVDA adapters with the addon still inert, 9c wiring +
-   panic gesture + packaging + the live checklist — split agreed 2026-07-19
-   to keep checklist iteration on a small final PR). Scope sketch: RFC 0001
-   milestones 1–3;
-   the fail-safe synth restoration design (config name swap, `pre_configSave`
-   guard, `getSynthInstance` patch) is already **Decided** in RFC 0001.
+   (agreed 2026-07-18). Spec:
+   [0007-bridge-nvda-edge.md](specs/0007-bridge-nvda-edge.md) (agreed
+   2026-07-19; delivered as three sequential PRs, the split agreed 2026-07-19
+   to keep checklist iteration on a small final PR). Scope: RFC 0001
+   milestones 1–3; the fail-safe synth restoration design (config name swap,
+   `pre_configSave` guard, `getSynthInstance` patch) is **Decided** in RFC 0001.
+   - **9a** — **Done (PR #12, 2026-07-20)**: the headless connection stack —
+     `Listener` seam + `TcpListener`, `SocketTransport`, and `BridgeServer`,
+     proven by a real-socket integration scenario in CI.
+   - **9b** — **Done (PR #13, 2026-07-20)**: the NVDA adapters (`nvda_*.py`) +
+     `nvdaMcpSpy` spy synth (addon still inert), the pure `spy_sink` seam
+     unit-tested, and the announced capabilities narrowed to
+     speech/braille/gestures.
+   - **9c** — **Done (PR #14, 2026-07-21)**: the switch-on — `plugin.py`
+     wiring, the panic gesture (`kb:NVDA+control+shift+b`), packaging verified,
+     and the live-NVDA checklist run with Marlon at the keyboard (results in
+     the PR body). Live testing **pivoted the silent-mode mechanism**: the spy
+     synth + `SynthSwapper` + RFC 0001 fail-safe (9b) were replaced by
+     transparent capture at `filter_speechSequence` (the real synth stays
+     loaded; it cannot strand the user mute), and the PR added session beeps,
+     the `announce` hint command, crashed-client resilience, and a build
+     dependency fix. See [spec 0008](specs/0008-transparent-silent-capture.md).
 9.1. C follow-up, bridge control UI + connection config (agreed 2026-07-18):
    an NVDA menu → Tools entry opening a bridge dialog — connection-mode combo
    (Local: named pipe; Remote: TCP/IP, **greyed out** — see below), status

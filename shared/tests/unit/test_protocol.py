@@ -248,6 +248,7 @@ def test_command_set_matches_plan_v1() -> None:
 		"getState",
 		"getConfig",
 		"setConfig",
+		"announce",
 		"bye",
 	}
 	assert {c.value for c in p.Command} == expected
@@ -292,6 +293,7 @@ def test_capabilities_cover_one_per_command_group() -> None:
 		"focus",
 		"state",
 		"config",
+		"announce",
 	}
 
 

@@ -19,6 +19,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from .... import protocol
+from .announce import AnnounceHandler
 from .bye import ByeHandler
 from .command_handler import CommandHandler
 from .echo import EchoHandler
@@ -45,6 +46,7 @@ NVDA_CAPABILITIES: tuple[protocol.Capability, ...] = (
 	protocol.Capability.SPEECH,
 	protocol.Capability.BRAILLE,
 	protocol.Capability.GESTURES,
+	protocol.Capability.ANNOUNCE,
 )
 
 
@@ -72,6 +74,7 @@ def build_command_registry(factory: AdapterFactory, nvda_version: str) -> dict[s
 		protocol.Command.WAIT_FOR_SPEECH: WaitForSpeechHandler(),
 		protocol.Command.WAIT_FOR_SPEECH_TO_FINISH: WaitForSpeechToFinishHandler(),
 		protocol.Command.GET_BRAILLE: GetBrailleHandler(),
+		protocol.Command.ANNOUNCE: AnnounceHandler(),
 		# Ports arrive in session E; until then they answer a clean CommandError.
 		protocol.Command.GET_FOCUS_INFO: not_implemented,
 		protocol.Command.GET_STATE: not_implemented,

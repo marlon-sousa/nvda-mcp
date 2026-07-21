@@ -120,6 +120,14 @@ Adapted from `../nvda/tests/system/libraries/SystemTestSpy/speechSpySynthDriver.
 
 ### Fail-safe synth restoration (silent mode) — non-negotiable
 
+> **Superseded by [spec 0008](0008-transparent-silent-capture.md)
+> (2026-07-21).** Silent mode no longer swaps the synth at all: it leaves the
+> real synth loaded and intercepts speech at `filter_speechSequence`, so this
+> whole fail-safe is moot (there is nothing to restore). The design below is
+> kept for history; it was implemented in 9b, found fragile (a main-thread /
+> server-thread `setSynth` race could leave the user mute) and non-transparent
+> in 9c live testing, and replaced. Read spec 0008 for the current mechanism.
+
 A crashed harness must never leave a blind tester with a mute screen reader:
 
 1. Synth swap is session-scoped; restore in `finally` on every teardown path

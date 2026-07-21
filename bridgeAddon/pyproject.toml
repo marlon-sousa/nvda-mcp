@@ -46,18 +46,16 @@ typeCheckingMode = "strict"
 # edge that imports NVDA is exempted via `ignore` below, because the domain it
 # serves is fully checked and the edge is validated by live-NVDA integration
 # tests (milestone 6). See AGENTS.md "Internal architecture — ports & adapters".
-include = ["addon/globalPlugins/nvdaMcpBridge", "addon/synthDrivers", "buildVars.py", "tests"]
+include = ["addon/globalPlugins/nvdaMcpBridge", "buildVars.py", "tests"]
 exclude = ["sconstruct", ".git", "__pycache__"]
 
 # The NVDA-importing edge: unresolved NVDA imports here raise nothing. Keep
 # these files thin (glue only); real logic belongs in the checked domain. The
-# adapters/nvda_*.py glob already covers session C's real adapters and the
-# factory; the spy synth driver is named individually. The pure spy_sink.py the
-# spy talks through is deliberately NOT here -- it stays strict-checked.
+# adapters/nvda_*.py glob covers every NVDA-importing adapter (the sources, the
+# announcer, the session-signals beeps, and the nvda_main_thread wx helper).
 ignore = [
     "addon/globalPlugins/nvdaMcpBridge/plugin.py",
     "addon/globalPlugins/nvdaMcpBridge/adapters/nvda_*.py",
-    "addon/synthDrivers/nvdaMcpSpy.py",
 ]
 
 # So `import nvdaMcpBridge.*` (the package) and `import fakes` (test helpers)

@@ -28,6 +28,8 @@ from scriptHandler import script
 from . import protocol
 from .adapters.bridge_server import BridgeServer
 from .adapters.nvda_adapter_factory import NvdaAdapterFactory
+from .adapters.nvda_announcer import NvdaAnnouncer
+from .adapters.nvda_session_signals import NvdaSessionSignals
 from .adapters.tcp_listener import TcpListener
 from .wiring import build_session
 
@@ -41,8 +43,9 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 	"""Entry point NVDA instantiates when the addon loads.
 
 	Builds and starts the bridge server (loopback, ``DEFAULT_PORT``). One session
-	at a time; the user's synth is restored on session end, on the panic gesture,
-	and on NVDA shutdown.
+	at a time. The synth is never swapped -- silent mode just suppresses NVDA's
+	speech at the speak() filter -- so ending a session (bye, panic gesture, or
+	NVDA shutdown) simply unregisters that filter and speech resumes at once.
 	"""
 
 	# The default Input Gestures category for this plugin's scripts.
@@ -54,9 +57,11 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 		listener = TcpListener("127.0.0.1", protocol.DEFAULT_PORT)
 		logs_dir = _transcripts_dir()
 		nvda_version = buildVersion.version
+		signals = NvdaSessionSignals()
+		announcer = NvdaAnnouncer()
 
 		def make_session(transport):
-			return build_session(transport, factory, logs_dir, nvda_version)
+			return build_session(transport, factory, logs_dir, nvda_version, signals, announcer)
 
 		self._server = BridgeServer(listener, make_session)
 		try:
@@ -70,14 +75,15 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 
 	@script(
 		# Translators: Input help message for the NVDA MCP bridge panic command.
-		description=_("Stop the NVDA MCP bridge: end any active session and restore your synthesizer"),
+		description=_("Stop the NVDA MCP bridge: end any active session and resume NVDA's speech"),
 		gesture="kb:NVDA+control+shift+b",
 	)
 	def script_panic(self, gesture) -> None:
+		# stop() joins the server thread, whose teardown unregisters the speech
+		# filter -- so speech is already flowing again by the time this returns.
 		self._server.stop()
-		# stop() scheduled the synth restore onto the main thread (fire-and-forget);
-		# queue the confirmation AFTER it, so it is spoken through the restored
-		# synth rather than swallowed by the spy that is still active right now.
+		# Queue the confirmation after the session-end beep (also queued during
+		# teardown), so it is spoken through the now-unsuppressed synth.
 		# Translators: Announced after the panic gesture stops the bridge.
 		wx.CallAfter(ui.message, _("NVDA MCP bridge stopped"))
 

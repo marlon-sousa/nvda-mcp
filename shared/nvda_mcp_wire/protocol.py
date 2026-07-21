@@ -70,6 +70,7 @@ __all__ = [
 	"GetConfigParams",
 	"SetConfigParams",
 	"ConfigResult",
+	"AnnounceParams",
 	"AckResult",
 ]
 
@@ -116,6 +117,7 @@ class Capability(StrEnum):
 	FOCUS = "focus"
 	STATE = "state"
 	CONFIG = "config"
+	ANNOUNCE = "announce"
 
 
 class Command(StrEnum):
@@ -139,6 +141,7 @@ class Command(StrEnum):
 	GET_STATE = "getState"
 	GET_CONFIG = "getConfig"
 	SET_CONFIG = "setConfig"
+	ANNOUNCE = "announce"
 	BYE = "bye"
 
 
@@ -497,6 +500,19 @@ class ConfigResult:
 
 
 @dataclass
+class AnnounceParams:
+	"""Speak ``text`` aloud to the human at the keyboard, even in silent mode.
+
+	A bridge->human hint channel (not agent-facing data): the bridge voices this
+	on a side channel that never touches the reader's configured synth, so the
+	spy stays transparent to NVDA and other add-ons. Acknowledged with
+	:class:`AckResult`.
+	"""
+
+	text: str
+
+
+@dataclass
 class AckResult:
 	"""Generic acknowledgement for commands with no payload (ping, bye, ...)."""
 
@@ -538,5 +554,6 @@ COMMAND_SHAPES: Final[Mapping[Command, CommandShape]] = {
 	Command.GET_STATE: CommandShape(None, StateResult),
 	Command.GET_CONFIG: CommandShape(GetConfigParams, ConfigResult),
 	Command.SET_CONFIG: CommandShape(SetConfigParams, ConfigResult),
+	Command.ANNOUNCE: CommandShape(AnnounceParams, AckResult),
 	Command.BYE: CommandShape(None, AckResult),
 }

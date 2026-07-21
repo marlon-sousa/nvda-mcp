@@ -12,6 +12,18 @@
       },
       "additionalProperties": true
     },
+    "AnnounceParams": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "additionalProperties": true
+    },
     "BrailleResult": {
       "type": "object",
       "properties": {
@@ -197,7 +209,8 @@
               "gestures",
               "focus",
               "state",
-              "config"
+              "config",
+              "announce"
             ]
           }
         },
@@ -571,6 +584,14 @@
       },
       "result": {
         "$ref": "#/$defs/ConfigResult"
+      }
+    },
+    "announce": {
+      "params": {
+        "$ref": "#/$defs/AnnounceParams"
+      },
+      "result": {
+        "$ref": "#/$defs/AckResult"
       }
     },
     "bye": {

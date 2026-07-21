@@ -8,9 +8,11 @@
 #
 # On pyright's ignore list only because it imports the nvda_*.py adapters (which
 # import NVDA); it makes no NVDA calls itself. The mode branch is the whole point
-# of the factory: silent mode captures through the spy synth (NVDA goes quiet),
-# live mode observes the pre_speechQueued hook (the real synth keeps talking).
-# Braille, the swapper, and the gesture sender are mode-independent.
+# of the factory: silent mode captures via the speak() FILTER and suppresses the
+# audio while leaving the real synth loaded (NvdaSilentSpeechSource); live mode
+# observes the pre_speechQueued hook and lets the real synth talk. Neither mode
+# swaps the synth -- there is no synth swapper. Braille and the gesture sender are
+# mode-independent.
 
 from __future__ import annotations
 
@@ -19,8 +21,7 @@ from ..domain.ports.adapter_factory import AdapterFactory, AdapterSet
 from .nvda_braille_source import NvdaBrailleSource
 from .nvda_gesture_sender import NvdaGestureSender
 from .nvda_live_speech_source import NvdaLiveSpeechSource
-from .nvda_spy_speech_source import NvdaSpySpeechSource
-from .nvda_synth_swapper import NvdaSynthSwapper
+from .nvda_silent_speech_source import NvdaSilentSpeechSource
 
 
 class NvdaAdapterFactory(AdapterFactory):
@@ -28,10 +29,9 @@ class NvdaAdapterFactory(AdapterFactory):
 
 	def build(self, mode: protocol.CaptureMode) -> AdapterSet:
 		silent = mode is protocol.CaptureMode.SILENT
-		speech_source = NvdaSpySpeechSource() if silent else NvdaLiveSpeechSource()
+		speech_source = NvdaSilentSpeechSource() if silent else NvdaLiveSpeechSource()
 		return AdapterSet(
 			speech_source=speech_source,
 			braille_source=NvdaBrailleSource(),
-			synth_swapper=NvdaSynthSwapper(),
 			gesture_sender=NvdaGestureSender(),
 		)

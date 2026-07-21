@@ -33,8 +33,10 @@ from .commands.session_context import SessionContext
 from .teardown_reason import TeardownReason
 
 if TYPE_CHECKING:
+	from ..ports.announcer import Announcer
 	from ..ports.clock import Clock
 	from ..ports.message_channel import MessageChannel
+	from ..ports.session_signals import SessionSignals
 	from ..ports.transcript import Transcript
 	from .commands.command_handler import CommandHandler
 
@@ -71,14 +73,17 @@ class Session:
 		clock: Clock,
 		config: SessionConfig,
 		registry: Mapping[str, CommandHandler],
+		signals: SessionSignals,
+		announcer: Announcer,
 	) -> None:
 		self._channel = channel
 		self._transcript = transcript
 		self._clock = clock
 		self._config = config
 		self._registry = registry
+		self._signals = signals
 
-		self._ctx = SessionContext(clock, transcript, self.request_teardown)
+		self._ctx = SessionContext(clock, transcript, self.request_teardown, announcer)
 		self._state = _State.PRE_HELLO
 
 		# Watchdog bookkeeping (monotonic seconds); seeded in run().
@@ -209,6 +214,9 @@ class Session:
 		self._reply(request.id, result)
 		if pre_hello:
 			self._state = _State.ESTABLISHED
+			# Two ascending tones: the bridge is now controlling NVDA. Guarded so a
+			# beep failure never breaks the just-established session.
+			self._guard(self._signals.session_started)
 
 	# -- teardown ------------------------------------------------------------
 
@@ -227,13 +235,16 @@ class Session:
 		reason = self._reason if self._reason is not None else TeardownReason.EXTERNAL
 		ctx = self._ctx
 		if ctx.adapters is not None:
+			# Stopping the speech source unregisters the speak() filter (silent
+			# mode), so NVDA's speech flows again at once -- there is no synth to
+			# restore, because none was ever swapped.
 			self._guard(ctx.adapters.speech_source.stop)
 			self._guard(ctx.adapters.braille_source.stop)
-			self._guard(ctx.adapters.synth_swapper.restore)
-		if ctx.swapped_real is not None:
-			real = ctx.swapped_real
-			self._guard(lambda: self._transcript.synth_restored(real))
 		self._guard(lambda: self._transcript.session_closed(reason.value))
+		if self._state is _State.ESTABLISHED:
+			# Two descending tones: control released. Only if a session actually
+			# established (no end-cue for a connection that never said hello).
+			self._guard(self._signals.session_ended)
 		self._guard(self._channel.close)
 
 	@staticmethod

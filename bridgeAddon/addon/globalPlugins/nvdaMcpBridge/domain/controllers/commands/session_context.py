@@ -24,6 +24,7 @@ if TYPE_CHECKING:
 	from ...entities.braille_buffer import BrailleBuffer
 	from ...entities.speech_buffer import SpeechBuffer
 	from ...ports.adapter_factory import AdapterSet
+	from ...ports.announcer import Announcer
 	from ...ports.clock import Clock
 	from ...ports.transcript import Transcript
 	from ..teardown_reason import TeardownReason
@@ -37,17 +38,19 @@ class SessionContext:
 		clock: Clock,
 		transcript: Transcript,
 		close: Callable[[TeardownReason], None],
+		announcer: Announcer,
 	) -> None:
 		self.clock = clock
 		self.transcript = transcript
 		self._close = close
+		#: The bridge's line to the reader's real synth: read its name (hello) and
+		#: speak hints through it (announce), even during silent capture. Always
+		#: present -- it never depends on hello.
+		self.announcer = announcer
 		# Installed by the hello handler; None before it runs.
 		self.speech: SpeechBuffer | None = None
 		self.braille: BrailleBuffer | None = None
 		self.adapters: AdapterSet | None = None
-		#: The user's real synth name once a silent-mode swap happened, so the
-		#: Session's teardown can log SYNTH RESTORE. None means no swap to undo.
-		self.swapped_real: str | None = None
 
 	def close(self, reason: TeardownReason) -> None:
 		"""Ask the session to end with ``reason`` (used by bye and the panic path).

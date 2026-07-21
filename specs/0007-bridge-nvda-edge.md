@@ -1,5 +1,13 @@
 # Spec 0007 — bridge↔NVDA: connection stack, real adapters, spy synth (session C)
 
+> **Silent-mode mechanism superseded by
+> [spec 0008](0008-transparent-silent-capture.md) (2026-07-21).** The spy synth
+> (`nvdaMcpSpy`), the `SynthSwapper`, and the fail-safe below were implemented in
+> 9b, then replaced in 9c after live testing: silent mode now leaves the real
+> synth loaded and intercepts speech at `filter_speechSequence` (transparent, and
+> it cannot strand the user mute). 9a (the connection stack) and the 9c switch-on
+> / packaging still stand. Read spec 0008 for the current silent-mode design.
+
 Implementation contract for ROADMAP lane 1, entry 9 (session C). Authored on
 the entry's branch per process; code starts only after this spec is agreed in
 conversation. Like spec 0004, one spec covers the whole entry, delivered as

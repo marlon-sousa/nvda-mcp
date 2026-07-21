@@ -19,6 +19,8 @@ from pathlib import Path
 from typing import Any
 
 from fakes.adapter_factory import FakeAdapterFactory
+from fakes.announcer import FakeAnnouncer
+from fakes.session_signals import FakeSessionSignals
 
 from nvdaMcpBridge import protocol as p
 from nvdaMcpBridge.adapters.bridge_server import BridgeServer, ServerState
@@ -65,11 +67,11 @@ def test_a_whole_session_over_a_real_socket(tmp_path: Path) -> None:
 	factories: list[FakeAdapterFactory] = []
 
 	def session_factory(transport: Any) -> Session:
-		# A fresh fake NVDA per session; kept so the test can assert the synth was
-		# restored on each teardown.
+		# A fresh fake NVDA per session; kept so the test can assert capture was
+		# stopped (the filter unregistered) on each teardown.
 		factory = FakeAdapterFactory(speech={"NVDA+f7": ["Elements list dialog"]})
 		factories.append(factory)
-		return build_session(transport, factory, tmp_path, "2026.1.0")
+		return build_session(transport, factory, tmp_path, "2026.1.0", FakeSessionSignals(), FakeAnnouncer())
 
 	listener = TcpListener("127.0.0.1", 0)
 	server = BridgeServer(listener, session_factory)
@@ -93,8 +95,8 @@ def test_a_whole_session_over_a_real_socket(tmp_path: Path) -> None:
 
 			agent.write(_request(3, "pressGesture", gestures=["NVDA+f7"]))
 			assert _read_reply(agent)["result"] == {"ok": True}
-			agent.write(_request(4, "waitForSpeechToFinish", timeout=1.0))
-			assert _read_reply(agent)["result"]["finished"] is True
+			agent.write(_request(4, "waitForSpeechToFinish", timeout=3.0))
+			assert _read_reply(agent, timeout=6.0)["result"]["finished"] is True
 			agent.write(_request(5, "getSpeech", sinceIndex=0))
 			assert "Elements list dialog" in _read_reply(agent)["result"]["text"]
 
@@ -105,7 +107,7 @@ def test_a_whole_session_over_a_real_socket(tmp_path: Path) -> None:
 
 		# The session ended (bye) and the server is accepting again, no restart.
 		_wait_until(lambda: server.status.state is ServerState.LISTENING)
-		assert factories[0].synth_swapper.restores == 1
+		assert factories[0].speech_source.stopped == 1
 
 		# -- second session, same server -------------------------------------
 		agent = _dial(endpoint)
@@ -119,7 +121,7 @@ def test_a_whole_session_over_a_real_socket(tmp_path: Path) -> None:
 
 		_wait_until(lambda: server.status.state is ServerState.LISTENING)
 		assert len(factories) == 2
-		assert factories[1].synth_swapper.restores == 1
+		assert factories[1].speech_source.stopped == 1
 	finally:
 		server.stop()
 
@@ -130,7 +132,9 @@ def test_stop_ends_an_idle_server_promptly(tmp_path: Path) -> None:
 	# A server that never sees a connection still stops cleanly and promptly --
 	# the accept poll window, not a client, is what bounds stop().
 	def session_factory(transport: Any) -> Session:
-		return build_session(transport, FakeAdapterFactory(), tmp_path, "2026.1.0")
+		return build_session(
+			transport, FakeAdapterFactory(), tmp_path, "2026.1.0", FakeSessionSignals(), FakeAnnouncer()
+		)
 
 	server = BridgeServer(TcpListener("127.0.0.1", 0), session_factory)
 	server.start()
@@ -145,7 +149,9 @@ def test_an_abruptly_reset_client_does_not_kill_the_server(tmp_path: Path) -> No
 	# WinError 10054). The server must treat that as EOF, end the session, and
 	# keep serving -- not let the exception take the accept loop down.
 	def session_factory(transport: Any) -> Session:
-		return build_session(transport, FakeAdapterFactory(), tmp_path, "2026.1.0")
+		return build_session(
+			transport, FakeAdapterFactory(), tmp_path, "2026.1.0", FakeSessionSignals(), FakeAnnouncer()
+		)
 
 	server = BridgeServer(TcpListener("127.0.0.1", 0), session_factory)
 	server.start()

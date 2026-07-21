@@ -486,3 +486,12 @@ only needs the merged code + its spec + this file.
   `SocketTransport` leaf maps any socket error other than the idle timeout to
   `b""` (an abrupt reset is an abrupt EOF), and `BridgeServer` wraps each session
   so no session fault can break the accept loop. Keep both.
+- **NVDA mutations run on NVDA's MAIN thread; the bridge Session runs on a
+  background (server) thread.** Anything that touches NVDA from an adapter —
+  `tones`, the synth, gestures — must marshal to the main thread
+  (`adapters/nvda_main_thread.run_on_main`, or `wx.CallAfter`), or it races
+  NVDA's own main-thread work. Teardown paths use the fire-and-forget form so a
+  main-thread caller (panic/terminate) can't deadlock waiting on the thread it
+  is joining. (The original silent-mode mute bug was exactly a server-thread
+  `setSynth` racing a main-thread config-profile reload; spec 0008 removed the
+  synth swap entirely, but the thread rule stands for tones and gestures.)

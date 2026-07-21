@@ -40,19 +40,15 @@ def test_records_every_event_in_order_with_timestamps(
 ) -> None:
 	transcript.open()
 	transcript.session_opened("silent", "espeak")
-	transcript.synth_swapped("espeak")
 	transcript.gesture("NVDA+f7")
 	transcript.speech("Find dialog")
 	transcript.note("something odd")
-	transcript.synth_restored("espeak")
 	transcript.session_closed("client-bye")
 	assert writer.lines == [
 		"T SESSION OPEN mode=silent synth=espeak",
-		"T SYNTH SWAP in=nvdaMcpSpy saved=espeak",
 		"T GESTURE NVDA+f7",
 		"T SPEECH 'Find dialog'",
 		"T NOTE something odd",
-		"T SYNTH RESTORE -> espeak",
 		"T SESSION CLOSE reason=client-bye",
 	]
 

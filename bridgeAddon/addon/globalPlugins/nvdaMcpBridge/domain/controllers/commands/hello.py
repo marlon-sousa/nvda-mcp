@@ -5,9 +5,10 @@
 # completes, and the one that BUILDS the session. Unlike the operational handlers
 # (which only read a ready SessionContext), hello is wired with the AdapterFactory
 # and the NVDA version, and it populates the context: builds the mode-specific
-# adapters, creates the buffers, starts capture, and (silent mode only) swaps the
-# synth. It installs the AdapterSet onto the context as soon as build() succeeds,
-# so the Session's teardown can restore the synth even if a later step here fails.
+# adapters, creates the buffers, and starts capture. There is NO synth swap: the
+# reader's real synth stays loaded in every mode; silent mode suppresses NVDA's
+# speak() output at the speech source instead (see nvda_silent_speech_source), so
+# NVDA and other add-ons keep seeing their configured synth as valid and active.
 #
 # On a protocol-version mismatch it raises CommandError before touching anything
 # -- the factory is never called -- and the Session ends the handshake.
@@ -49,12 +50,14 @@ class HelloHandler(CommandHandler):
 			)
 		ctx.transcript.open()
 		adapters = self._factory.build(params.mode)
-		# Installed before starting capture, so teardown can restore even if a
-		# start() below raises.
+		# Installed before starting capture, so teardown can stop the sources even
+		# if a start() below raises.
 		ctx.adapters = adapters
 
-		silent = params.mode is protocol.CaptureMode.SILENT
-		speech = SpeechBuffer(ctx.clock, exact_finish=silent)
+		# No exact-finish signal: silent mode suppresses at the speak() filter, so
+		# there is no synth "done speaking" to key off; both modes use the buffer's
+		# elapsed-time heuristic.
+		speech = SpeechBuffer(ctx.clock, exact_finish=False)
 		braille = BrailleBuffer(ctx.clock)
 		speech.set_observer(ctx.transcript.speech)
 		ctx.speech = speech
@@ -62,12 +65,9 @@ class HelloHandler(CommandHandler):
 		adapters.speech_source.start(speech)
 		adapters.braille_source.start(braille)
 
-		synth = adapters.synth_swapper.current_synth()
+		# The reader's real synth stays loaded in every mode; just report it.
+		synth = ctx.announcer.current_synth()
 		ctx.transcript.session_opened(params.mode, synth)
-		if silent:
-			real = adapters.synth_swapper.swap_to_spy()
-			ctx.swapped_real = real
-			ctx.transcript.synth_swapped(real)
 
 		return protocol.HelloResult(
 			protocolVersion=protocol.PROTOCOL_VERSION,

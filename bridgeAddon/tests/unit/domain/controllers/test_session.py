@@ -19,10 +19,12 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 
 from fakes.adapter_factory import FakeAdapterFactory
+from fakes.announcer import FakeAnnouncer
 from fakes.clock import FakeClock
 from fakes.command_handler import FakeCommandHandler
 from fakes.message_channel import FakeChannel
 from fakes.script import TIMEOUT_EVENT
+from fakes.session_signals import FakeSessionSignals
 from fakes.transcript import FakeTranscript
 
 from nvdaMcpBridge import protocol as p
@@ -52,6 +54,7 @@ class Run:
 	transcript: FakeTranscript
 	factory: FakeAdapterFactory
 	clock: FakeClock
+	signals: FakeSessionSignals
 
 	def responses(self) -> list[dict[str, Any]]:
 		return self.channel.responses()
@@ -67,6 +70,8 @@ def run_session(
 	factory: FakeAdapterFactory | None = None,
 	transcript: FakeTranscript | None = None,
 	registry: Mapping[str, CommandHandler] | None = None,
+	signals: FakeSessionSignals | None = None,
+	announcer: FakeAnnouncer | None = None,
 	on_empty: str = "closed",
 	timeout_advance: float = 5.0,
 	nvda_version: str = "2026.1.0",
@@ -77,6 +82,8 @@ def run_session(
 	clock = clock or FakeClock()
 	factory = factory or FakeAdapterFactory()
 	transcript = transcript or FakeTranscript()
+	signals = signals or FakeSessionSignals()
+	announcer = announcer or FakeAnnouncer()
 	if registry is None:
 		registry = build_command_registry(factory, nvda_version)
 	channel = FakeChannel(events, clock=clock, timeout_advance=timeout_advance, on_empty=on_empty)
@@ -85,10 +92,17 @@ def run_session(
 		heartbeat_timeout=heartbeat_timeout,
 		inactivity_timeout=inactivity_timeout,
 	)
-	session = Session(channel, transcript, clock, config, registry)
+	session = Session(channel, transcript, clock, config, registry, signals, announcer)
 	if start:
 		session.run()
-	return Run(session=session, channel=channel, transcript=transcript, factory=factory, clock=clock)
+	return Run(
+		session=session,
+		channel=channel,
+		transcript=transcript,
+		factory=factory,
+		clock=clock,
+		signals=signals,
+	)
 
 
 def _result(response: dict[str, Any]) -> dict[str, Any]:
@@ -115,19 +129,19 @@ def _fake_registry(**handlers: FakeCommandHandler) -> dict[str, CommandHandler]:
 def test_silent_hello_establishes_and_reports() -> None:
 	run = run_session([hello("silent")])
 	assert run.factory.built_mode is p.CaptureMode.SILENT
-	assert run.factory.synth_swapper.swaps == 1
+	assert run.signals.started == 1  # ascending cue on establish
 	result = _result(run.responses()[0])
 	assert result["mode"] == "silent"
-	assert result["synth"] == "espeak"
+	assert result["synth"] == "espeak"  # the real synth, read via the announcer
 	assert result["reader"] == {"name": "nvda", "version": "2026.1.0"}
 	assert result["capabilities"] == [c.value for c in NVDA_CAPABILITIES]
 	assert result["logPath"] == run.transcript.path
 
 
-def test_live_hello_does_not_swap() -> None:
+def test_live_hello_establishes() -> None:
 	run = run_session([hello("live")])
 	assert run.factory.built_mode is p.CaptureMode.LIVE
-	assert run.factory.synth_swapper.swaps == 0
+	assert run.signals.started == 1
 	assert _result(run.responses()[0])["mode"] == "live"
 
 
@@ -189,35 +203,35 @@ def test_pings_hold_the_heartbeat_but_not_inactivity() -> None:
 	assert run.closed_with(TeardownReason.INACTIVITY_TIMEOUT)
 
 
-# -- teardown: restore on every path -----------------------------------------
+# -- teardown: stop capture on every path (speech flows again) ---------------
+# There is no synth to restore now: stopping the speech source unregisters the
+# suppression filter, so NVDA speaks again. Each step is guarded, so a raise in
+# one never skips the channel close or the end cue.
 
 
-def test_restore_runs_even_when_the_transcript_raises_on_close() -> None:
+def test_teardown_stops_capture_even_when_the_transcript_raises_on_close() -> None:
 	transcript = FakeTranscript(fail_on={"session_closed"})
 	run = run_session([hello("silent")], transcript=transcript)
-	assert run.factory.synth_swapper.restores == 1
+	assert run.factory.speech_source.stopped == 1
 	assert run.channel.closed is True
 
 
-def test_restore_runs_even_when_a_source_stop_raises() -> None:
+def test_teardown_finishes_even_when_a_source_stop_raises() -> None:
 	factory = FakeAdapterFactory()
 	factory.speech_source.fail_stop = True
 	run = run_session([hello("silent")], factory=factory)
-	assert factory.synth_swapper.restores == 1
-	assert run.channel.closed is True
-
-
-def test_a_failing_restore_does_not_block_the_channel_close() -> None:
-	factory = FakeAdapterFactory(fail_restore=True)
-	run = run_session([hello("silent")], factory=factory)
-	assert factory.synth_swapper.restores == 1
+	# The speech source stop raised, but the guard let braille stop, the end cue
+	# fire, and the channel close still happen.
+	assert factory.braille_source.stopped == 1
+	assert run.signals.ended == 1
 	assert run.channel.closed is True
 
 
 def test_teardown_is_idempotent_when_called_twice() -> None:
 	run = run_session([hello("silent")])
 	run.session._teardown()  # type: ignore[attr-defined]
-	assert run.factory.synth_swapper.restores == 1
+	assert run.factory.speech_source.stopped == 1
+	assert run.signals.ended == 1
 
 
 # -- dispatch mechanics (fake handlers) --------------------------------------
@@ -307,10 +321,11 @@ def test_request_teardown_from_another_thread_ends_the_loop() -> None:
 	clock = FakeClock()
 	factory = FakeAdapterFactory()
 	transcript = FakeTranscript()
+	signals = FakeSessionSignals()
 	registry = build_command_registry(factory, "x")
 	channel = FakeChannel([hello()], clock=clock, on_empty="timeout", timeout_advance=1.0)
 	config = SessionConfig(nvda_version="x", heartbeat_timeout=1e9, inactivity_timeout=1e9)
-	session = Session(channel, transcript, clock, config, registry)
+	session = Session(channel, transcript, clock, config, registry, signals, FakeAnnouncer())
 
 	thread = threading.Thread(target=session.run)
 	thread.start()
@@ -319,4 +334,5 @@ def test_request_teardown_from_another_thread_ends_the_loop() -> None:
 
 	assert not thread.is_alive()
 	assert ("session_closed", TeardownReason.EXTERNAL.value) in transcript.events
-	assert factory.synth_swapper.restores == 1
+	assert factory.speech_source.stopped == 1
+	assert signals.ended == 1
