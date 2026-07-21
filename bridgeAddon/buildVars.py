@@ -33,8 +33,14 @@ The add-on is inert until a session connects: it never swaps your synthesizer or
 )
 
 
+# RECURSIVE on purpose: this addon is a hexagonal PACKAGE (adapters/, domain/,
+# ...), not the usual flat globalPlugins/<name>.py. sconstruct turns each of
+# these into a build dependency of the .nvda-addon, so the non-recursive "*.py"
+# the template ships with would track only the top-level files -- editing an
+# adapter would leave the build "up to date" and ship stale code. "**/*.py"
+# matches every module at any depth (including the top level).
 pythonSources: list[str] = [
-	"addon/globalPlugins/nvdaMcpBridge/*.py",
+	"addon/globalPlugins/nvdaMcpBridge/**/*.py",
 	"addon/synthDrivers/nvdaMcpSpy.py",
 ]
 i18nSources: list[str] = pythonSources + ["buildVars.py"]
