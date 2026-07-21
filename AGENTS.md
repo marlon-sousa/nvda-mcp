@@ -467,3 +467,22 @@ only needs the merged code + its spec + this file.
   not a build/CI/type-check dependency. Adapter files that import NVDA go in
   pyright's `ignore` list (see the ports & adapters section); the domain they
   serve stays fully strict-checked.
+- **`buildVars.pythonSources` must be RECURSIVE (`**/*.py`).** This addon is a
+  hexagonal *package* with subdirectories, not the flat single-module addon the
+  AddonTemplate assumes. sconstruct turns each `pythonSource` into a build
+  dependency of the `.nvda-addon`, so the template's non-recursive
+  `globalPlugins/nvdaMcpBridge/*.py` tracked only the top-level modules — editing
+  anything under `adapters/` or `domain/` changed no tracked dependency and
+  `scons` reported *"up to date"* without repackaging, silently shipping stale
+  code. (The build *action* rglobs the whole tree, which is exactly why a forced
+  clean rebuild always looked correct and hid the hole.) When you build, don't
+  trust "up to date" alone after a subdirectory edit — or just keep the glob
+  recursive.
+- **A crashed client must never take the bridge server down.** A client that
+  dies mid-session RSTs the socket, so `sock.recv` raises `ConnectionResetError`
+  (WinError 10054), *not* `b""`. The Session loop only catches `ChannelClosed`,
+  so an un-mapped socket error escapes up through `run()` and kills the
+  `BridgeServer` accept loop — a crashed *client* stops the *bridge*. The
+  `SocketTransport` leaf maps any socket error other than the idle timeout to
+  `b""` (an abrupt reset is an abrupt EOF), and `BridgeServer` wraps each session
+  so no session fault can break the accept loop. Keep both.

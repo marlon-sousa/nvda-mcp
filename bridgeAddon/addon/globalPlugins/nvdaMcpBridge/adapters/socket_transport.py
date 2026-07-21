@@ -37,9 +37,18 @@ class SocketTransport(Transport):
 
 		``settimeout`` in the constructor makes an idle read raise
 		``socket.timeout`` (an alias of ``TimeoutError`` since 3.10), which is
-		exactly the seam's contract, so it simply propagates.
+		exactly the seam's contract, so it propagates. Any OTHER socket error --
+		a peer that vanished (a crashed/killed client resets the connection:
+		``ConnectionResetError``, WinError 10054) -- is an abrupt EOF: report it
+		as ``b""`` so the session ends cleanly and the server keeps serving,
+		rather than letting the exception escape and take the accept loop down.
 		"""
-		return self._sock.recv(4096)
+		try:
+			return self._sock.recv(4096)
+		except TimeoutError:
+			raise  # idle poll -- the seam's contract
+		except OSError:
+			return b""  # connection gone -> EOF
 
 	def sendall(self, data: bytes) -> None:
 		self._sock.sendall(data)

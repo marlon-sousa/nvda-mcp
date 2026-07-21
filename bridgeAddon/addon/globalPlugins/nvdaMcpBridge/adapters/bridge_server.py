@@ -93,9 +93,7 @@ class BridgeServer:
 			self._endpoint = self._listener.endpoint
 			self._state = ServerState.LISTENING
 			self._stopping = False
-			self._thread = threading.Thread(
-				target=self._serve, name="nvdaMcpBridge-server", daemon=True
-			)
+			self._thread = threading.Thread(target=self._serve, name="nvdaMcpBridge-server", daemon=True)
 			self._thread.start()
 
 	def stop(self) -> None:
@@ -135,7 +133,14 @@ class BridgeServer:
 					break  # stop() closed the listener
 				except Exception:
 					break  # an unexpected listener fault: stop, do not spin
-				self._run_session(transport)
+				try:
+					self._run_session(transport)
+				except Exception:
+					# A single session must NEVER take the server down. The
+					# Transport leaf already maps a dropped client to EOF (clean
+					# teardown), so this is defence in depth for any other fault:
+					# end that session and keep accepting.
+					pass
 		finally:
 			# An abnormal exit (a listener fault, not stop()) still has to leave an
 			# honest status and release the socket; the normal stop() path already

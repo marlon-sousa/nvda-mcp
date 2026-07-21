@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import socket
+import struct
 import time
 from pathlib import Path
 from typing import Any
@@ -137,3 +138,39 @@ def test_stop_ends_an_idle_server_promptly(tmp_path: Path) -> None:
 	server.stop()
 	assert time.monotonic() - started < 2.0
 	assert server.status.state is ServerState.STOPPED
+
+
+def test_an_abruptly_reset_client_does_not_kill_the_server(tmp_path: Path) -> None:
+	# Regression: a client that crashes mid-session resets the connection (RST /
+	# WinError 10054). The server must treat that as EOF, end the session, and
+	# keep serving -- not let the exception take the accept loop down.
+	def session_factory(transport: Any) -> Session:
+		return build_session(transport, FakeAdapterFactory(), tmp_path, "2026.1.0")
+
+	server = BridgeServer(TcpListener("127.0.0.1", 0), session_factory)
+	server.start()
+	try:
+		endpoint = server.status.endpoint
+		assert endpoint is not None
+		host, port = endpoint.rsplit(":", 1)
+
+		# Open a session, then abort the connection with a RST (SO_LINGER 0).
+		raw = socket.create_connection((host, int(port)), timeout=5.0)
+		agent = JsonLinesChannel(SocketTransport(raw))
+		agent.write(_request(1, "hello", mode="silent", protocolVersion=p.PROTOCOL_VERSION))
+		_read_reply(agent)
+		raw.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+		raw.close()  # -> RST to the bridge
+
+		# The server survives: back to LISTENING, and a fresh session still works.
+		_wait_until(lambda: server.status.state is ServerState.LISTENING, timeout=5.0)
+		agent2 = _dial(endpoint)
+		try:
+			agent2.write(_request(1, "hello", mode="silent", protocolVersion=p.PROTOCOL_VERSION))
+			assert _read_reply(agent2)["result"]["mode"] == "silent"
+			agent2.write(_request(2, "bye"))
+			assert _read_reply(agent2)["result"] == {"ok": True}
+		finally:
+			agent2.close()
+	finally:
+		server.stop()

@@ -183,3 +183,41 @@ def test_a_listener_fault_stops_the_server() -> None:
 		assert listener.closes >= 1  # the socket was released on the way out
 	finally:
 		server.stop()
+
+
+class _BoomSession(Session):
+	"""A session whose run() raises -- stands in for an unexpected session fault
+	(e.g. a client that vanished in a way the transport did not map to EOF)."""
+
+	def __init__(self, transport: Transport) -> None:
+		self.transport = transport
+
+	def run(self) -> None:
+		raise RuntimeError("session blew up")
+
+	def request_teardown(self, reason: TeardownReason) -> None:
+		pass
+
+
+def test_a_session_fault_does_not_take_the_server_down() -> None:
+	listener = FakeListener()
+	made: list[_BoomSession] = []
+
+	def factory(transport: Transport) -> Session:
+		session = _BoomSession(transport)
+		made.append(session)
+		return session
+
+	server = BridgeServer(listener, factory)
+	server.start()
+	try:
+		listener.connect(FakeTransport())
+		_wait_until(lambda: len(made) == 1)
+		# The faulting session must not stop the server: it returns to LISTENING
+		# and accepts a second connection.
+		_wait_until(_in_state(server, ServerState.LISTENING))
+		listener.connect(FakeTransport())
+		_wait_until(lambda: len(made) == 2)
+		assert server.status.state is ServerState.LISTENING
+	finally:
+		server.stop()
