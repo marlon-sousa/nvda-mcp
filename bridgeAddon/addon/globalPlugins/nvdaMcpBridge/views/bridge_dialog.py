@@ -196,6 +196,11 @@ class BridgeDialog(wx.Dialog):
 		self._mode_combo.Bind(wx.EVT_CHOICE, self._on_mode_changed)
 		conn_sizer.Add(self._mode_combo, flag=wx.EXPAND | wx.ALL, border=4)
 
+		# The last valid combo index, so we can revert when the user picks
+		# remote TCP (which is shown but unreachable — NVDA's bundled
+		# wxPython has no per-item Enable). Initialised in _refresh().
+		self._last_valid_combo_index = 0
+
 		main_sizer.Add(conn_sizer, flag=wx.EXPAND | wx.ALL, border=8)
 
 		# 3. Auto-start checkbox
@@ -244,14 +249,13 @@ class BridgeDialog(wx.Dialog):
 
 		# Combo: show the persisted mode. Freeze the whole combo while a session
 		# is active — the transport cannot change under a live connection.
-		# Remote TCP is always disabled at the item level (its security entry
-		# hasn't landed); re-applied here so it survives the full-combo Enable
-		# toggle.
+		# Remote TCP is shown but unreachable: _on_mode_changed rejects it
+		# (NVDA's bundled wxPython lacks per-item Enable, so we bounce back).
 		active = status.state is ServerState.SESSION_ACTIVE
-		self._mode_combo.SetSelection(_mode_to_combo_index(mode))
+		combo_index = _mode_to_combo_index(mode)
+		self._mode_combo.SetSelection(combo_index)
 		self._mode_combo.Enable(not active)
-		remote_index = _mode_to_combo_index(ConnectionMode.REMOTE_TCP)
-		self._mode_combo.Enable(remote_index, False)
+		self._last_valid_combo_index = combo_index
 
 		# Buttons: Start enabled only when stopped; Stop enabled otherwise.
 		stopped = status.state is ServerState.STOPPED
@@ -270,7 +274,12 @@ class BridgeDialog(wx.Dialog):
 		# The combo records the user's *preference*; the actual listener rebuild
 		# and server restart happen only when Start is pressed. This avoids
 		# tearing down a running session because the user browsed the combo.
-		pass
+		# Remote TCP is shown but unreachable — revert to the last valid entry
+		# (NVDA's bundled wxPython has no per-item Enable, so we bounce back).
+		if _combo_index_to_mode(self._mode_combo.GetSelection()) is ConnectionMode.REMOTE_TCP:
+			self._mode_combo.SetSelection(self._last_valid_combo_index)
+			return
+		self._last_valid_combo_index = self._mode_combo.GetSelection()
 
 	def _on_auto_start_changed(self, evt: wx.CommandEvent) -> None:
 		self._config.set_auto_start(self._auto_start_cb.GetValue())
