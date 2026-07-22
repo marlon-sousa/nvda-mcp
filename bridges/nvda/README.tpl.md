@@ -38,11 +38,14 @@ The split exists for a reason: the server must survive NVDA restarts, since rest
 
 1. Install this add-on (you have already done this if you are reading this from the Add-on Store).
 2. Open **NVDA menu → Tools → NVDA MCP Bridge…** and press **Start**. Nothing listens until you do this — see [Starting and stopping the bridge](#starting-and-stopping-the-bridge).
-3. Register the `nvda-mcp` server with your MCP client. From a source checkout, for Claude Code, this is:
+3. Register the `screenreader-mcp` server with your MCP client. From a source checkout, build it once and register the binary; for Claude Code, this is:
 
    ```
-   claude mcp add --scope user nvda -- uv run --directory <checkout>\mcpServer nvda-mcp
+   go -C <checkout>\server build -o screenreader-mcp.exe .\cmd\screenreader-mcp
+   claude mcp add --scope user screenreader -- <checkout>\server\screenreader-mcp.exe
    ```
+
+   The server takes no arguments: it ships knowing where this add-on listens. Ask the agent to list readers, then to connect to one.
 
 From that point the agent has NVDA available as a set of tools.
 
