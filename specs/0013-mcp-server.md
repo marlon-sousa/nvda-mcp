@@ -141,13 +141,13 @@ connected.
 
 ```json
 "mcpServers": {
-  "screenreader": {
-    "command": "screenreader-mcp.exe",
-    "args": ["--reader", "nvda=pipe:nvdaMcpBridge",
-             "--reader", "talkback=tcp:127.0.0.1:9010"]
-  }
+  "screenreader": { "command": "screenreader-mcp.exe" }
 }
 ```
+
+No arguments: the embedded defaults already know where our bridges listen (see
+below). Flags exist for overrides, and for running one process per reader when
+the readers live on different hosts.
 
 Running one process per reader remains equally valid, and is the natural shape
 when the readers live on different hosts. The two arrangements differ only in
@@ -241,12 +241,37 @@ MCP host.
 agent to disconnect first, rather than a silent switch that would pull the
 session out from under a multi-step task.
 
-### The endpoint set is deterministic; the scan reports liveness only
+### The endpoint set is deterministic: shipped defaults, user-overridable
 
-`list_readers` answers "what do I have at my disposal" from **configuration
-alone**. Every entry it can ever return is known before the process starts:
-either an endpoint given with `--reader`, or — when none is given — the built-in
-default, the NVDA bridge's pipe. Nothing is invented at runtime.
+**We author both sides, so the server ships knowing where our bridges listen.**
+The endpoint set is data, resolved in three layers, lowest precedence first:
+
+1. **Embedded defaults** (`go:embed`) — one entry per reader we ship a bridge
+   for, each naming *every* place that bridge is known to listen, in order.
+   Today: `nvda` → `pipe:nvdaMcpBridge`, then `tcp:127.0.0.1:8765`. A `jaws`
+   entry appears when that bridge does.
+2. **A user config file** — `--config <path>`, replacing or extending the
+   defaults, for a bridge on a non-standard endpoint.
+3. **`--reader name=spec` flags** — highest precedence, for one-off overrides
+   and tests.
+
+Two endpoints per reader is not redundancy: [spec 0011](0011-bridge-control-ui.md)'s
+dialog lets the user switch the NVDA bridge between named pipe and loopback TCP,
+so a single default would be wrong whenever they had. `connect_reader` takes a
+**reader**, tries that reader's endpoints in declared order, and reports which
+one answered — the agent's model stays "connect to NVDA" rather than "pick a
+transport", and the user's toggle needs no configuration from anyone.
+
+The defaults are **embedded rather than shipped as a sidecar file**: the point
+of a statically linked binary is one artifact, an MCP host launches the server
+with an unspecified working directory (so an on-disk default would have to be
+resolved against the executable path — a classic works-in-my-shell failure), and
+`.mcpb` bundling stays trivial with a single file. Discoverability is preserved
+by `--print-default-config`, which emits the same JSON for the user to redirect
+and edit.
+
+Every entry `list_readers` can ever return is therefore known before the process
+starts. Nothing is invented at runtime.
 
 The pipe scan serves exactly one purpose: saying whether a **known** endpoint is
 live. On Windows the named-pipe namespace can be enumerated by reading the
@@ -426,7 +451,8 @@ One interface per file, all in domain vocabulary. Their DTOs live beside them
 | `focus_inspector.go` | port — focus capability | `FocusInfo()`. |
 | `state_inspector.go` | port — state capability | `State()`. |
 | `config_accessor.go` | port — config capability | `GetConfig(keyPath)`, `SetConfig(keyPath, value)`. |
-| `endpoint_probe.go` | port — liveness of configured endpoints | `Live() []string` — which endpoint names have a bridge listening, as far as can be known without connecting. Implemented by the pipe scanner. |
+| `endpoint_source.go` | port — where the reader set comes from | `Readers() []ConfiguredReader`. One implementation now (embedded defaults + config file + flags, layered in wiring); a bridge-published source can be added later without touching the domain. |
+| `endpoint_probe.go` | port — liveness of known endpoints | `Live() []Endpoint` — which configured endpoints have a bridge listening, as far as can be known without connecting. Implemented by the pipe scanner. |
 | `clock.go` | port — time | `Now`, `Sleep`, injected everywhere; never `time.Sleep`. |
 | `log.go` | port — diagnostics | Keeps the domain away from `os.Stdout`. |
 
@@ -455,8 +481,9 @@ reviewer could call speculative given the single implementation.
 | `reader_session.go` | entity — what `hello` established | Reader name/version, capability set, mode, synth, `logPath`, `nvdaLogPath`, bridge protocol version. Immutable value. |
 | `capability.go` | entity — the capability vocabulary | Typed constants for the six groups, plus `Set` with `Has`. Unknown strings are retained and ignored, per protocol.md §4. |
 | `connection_state.go` | entity — the lifecycle state machine | `Disconnected` / `Connecting` / `Connected` / `Incompatible`, with the reason string `status` reports. No `Retrying`: the agent owns connection. |
-| `reader_endpoint.go` | entity — one configured endpoint | Name, transport kind, address, and the reader name expected there. Immutable value built by wiring, never by the scanner. |
-| `reader_listing.go` | entity — what `list_readers` answers | Endpoints joined with liveness: listening / not listening / unknown (TCP). Pure; the join lives here, not in the tool. |
+| `endpoint.go` | entity — one place a bridge may listen | Transport kind and address. Immutable value; parsed from `pipe:<name>` / `tcp:<host>:<port>`. |
+| `configured_reader.go` | entity — one reader we know how to reach | Name plus its endpoints **in declared order** (NVDA: pipe, then loopback TCP). Built by wiring from the layered sources, never by the scanner. |
+| `reader_listing.go` | entity — what `list_readers` answers | Readers and their endpoints joined with liveness: listening / not listening / unknown (TCP). Pure; the join lives here, not in the tool. |
 
 ### 4. `server/adapters/ports/transport.go` — the adapter seam
 
@@ -498,29 +525,38 @@ OS call.
 
 `const Version` — the single version source 12a's tagging scheme reads.
 
-### 9. `server/cmd/screenreader-mcp/main.go`
+### 9. `server/config/` — the shipped defaults and their loader
+
+| File | Role | Notes |
+|---|---|---|
+| `defaults.json` | data | The readers we ship a bridge for and every endpoint each is known to listen on, in order. Embedded with `go:embed`; also reproduced in `server/README.md`. |
+| `loader.go` | adapter — implements `EndpointSource` | Layers embedded defaults, an optional `--config` file, and `--reader` flags, highest precedence last. Pure decisions over an injected file reader, so it is unit-tested without touching disk. |
+
+### 10. `server/cmd/screenreader-mcp/main.go`
 
 Entry point **only**: parse flags and hand them to wiring. No logic.
 
 | Flag | Meaning |
 |---|---|
-| `--reader name=spec` | Repeatable. One configured endpoint, e.g. `nvda=pipe:nvdaMcpBridge` or `talkback=tcp:127.0.0.1:9010`. Omitted entirely, the server falls back to the NVDA bridge's default pipe. |
+| `--reader name=spec` | Repeatable, highest precedence. One endpoint for a reader, e.g. `nvda=pipe:nvdaMcpBridge` or `talkback=tcp:127.0.0.1:9010`. Repeating a name adds an endpoint to that reader, in order. |
+| `--config <path>` | A JSON file replacing or extending the embedded defaults. |
+| `--print-default-config` | Emits the embedded defaults for the user to redirect and edit, then exits. |
 | `--version` | Prints `version.Version` and exits. |
 
 There is deliberately **no** `--capture-mode` and no `--reader-log-level`: both
 are `connect_reader` parameters (see deliverable 15).
 
-### 10. `server/wiring/wiring.go`
+### 11. `server/wiring/wiring.go`
 
 Composition root. In 10a it builds the transport, the client, and returns a
 handshake-capable object; 10b extends it with the MCP server and controllers.
 
-### 11. `fakes/` and `testsupport/`
+### 12. `fakes/` and `testsupport/`
 
 A fake per port and a fake `Transport` (scriptable: queued responses, injected
 errors, EOF), plus builders. Each fake carries its compile-time assertion.
 
-### 12. CI and repo changes
+### 13. CI and repo changes
 
 - Delete `mcpServer/` and drop it from the uv workspace.
 - Replace the Python `server` job with a Go one — **the job name stays
@@ -534,17 +570,17 @@ errors, EOF), plus builders. Each fake carries its compile-time assertion.
 
 ## Deliverables — 10b: the MCP surface
 
-### 13. `server/domain/ports/tool_publisher.go`
+### 14. `server/domain/ports/tool_publisher.go`
 
 Port — how the domain publishes and retracts the advertised tool set. Keeps the
 SDK out of the domain; implemented by the MCP adapter.
 
-### 14. `server/domain/entities/tool_catalog.go`
+### 15. `server/domain/entities/tool_catalog.go`
 
 Entity — pure decision table: capability set in, tool names out. This *is* the
 gate. No reader names appear in it, only capability strings.
 
-### 15. `server/domain/controllers/tools/` — one controller per tool
+### 16. `server/domain/controllers/tools/` — one controller per tool
 
 A `Tool` interface (`Name`, `Capability`, `Description`, `InputSchema`,
 `Execute`) with one implementation per file, mirroring the bridge's
@@ -586,8 +622,8 @@ exists, and live in the same directory:
 
 | Tool | Params | What it does |
 |---|---|---|
-| `list_readers` | — | The `ReaderListing`: the configured endpoints (or the built-in default), each with liveness where knowable. |
-| `connect_reader` | `reader`, `mode`, `log_level?` | Dials that endpoint, handshakes, publishes the gated tools. Errors if a session is already live. `reader` may be omitted when exactly one endpoint is known. |
+| `list_readers` | — | The `ReaderListing`: every known reader with its endpoints and their liveness where knowable. |
+| `connect_reader` | `reader`, `mode`, `log_level?` | Tries that reader's endpoints **in declared order**, handshakes, publishes the gated tools, and reports which endpoint answered. Errors if a session is already live. |
 | `disconnect_reader` | — | Sends `bye`, retracts the gated tools. |
 | `status` | — | Connection state, reason, and the current `ReaderSession` if any. When a session is live it **also makes a real `ping` round trip** and reports the outcome, so the answer is proof rather than possibly-stale local state. |
 
@@ -625,7 +661,7 @@ says rather than what the server remembers.
 reasoning as the bridge's registry and `wiring.go`: no decorator
 auto-registration, no container.
 
-### 16. `server/domain/controllers/connection.go`
+### 17. `server/domain/controllers/connection.go`
 
 Controller — owns the lifecycle in "Connection is agent-initiated" above, driven
 entirely by the four ungated tools: `List` (endpoints joined with probe
@@ -639,7 +675,7 @@ Holds the `ConnectionState` and the current `ReaderSession`; `status` reads
 them. **The only stateful thing in the process**, and it is an ordinary value
 owned by wiring — not a package global.
 
-### 17. `server/adapters/mcp/`
+### 18. `server/adapters/mcp/`
 
 | File | Role |
 |---|---|
@@ -653,7 +689,7 @@ domain.
 
 ## Deliverables — 10c: conformance and release plumbing
 
-### 18. Cross-language conformance job
+### 19. Cross-language conformance job
 
 `server/tests/conformance/`, behind `//go:build conformance`, run by a
 `conformance` CI job on `windows-latest` that sets up both Go and Python, builds
@@ -665,12 +701,12 @@ This is the guarantee that replaces same-bytes sharing, and it is exactly the
 second-implementation check 0005 wanted from a Go port: two independent
 implementations of `specs/wire/v1/` proving they agree.
 
-### 19. Release plumbing
+### 20. Release plumbing
 
 `--version` wired to `version`, the `server-v*` half of 12a's tagging
 scheme, and a `server/README.md`.
 
-### 20. Board and docs
+### 21. Board and docs
 
 Flip ROADMAP entry 10 to Done; AGENTS.md's server paragraph updated to describe
 the Go structure.
@@ -682,6 +718,7 @@ the Go structure.
 | `adapters/wire/*` | generated contract binding | `go:generate` | `adapters/bridge/` only |
 | `domain/ports/session_dialer.go` | port | — | implemented by `bridge/handshake.go` |
 | `domain/ports/{speech,braille,gesture,focus,state,config}_*.go` | ports | — | implemented by `json_lines_client.go`, used by tools |
+| `domain/ports/endpoint_source.go` | port | — | implemented in `wiring`, used by `connection.go` |
 | `domain/ports/endpoint_probe.go` | port | — | implemented by `discovery/pipe_probe.go`, used by `connection.go` |
 | `domain/ports/clock.go`, `log.go` | ports | — | used by everything |
 | `domain/ports/tool_publisher.go` | port | — | implemented by `mcp/sdk_server.go`, used by `connection.go` |
@@ -689,8 +726,9 @@ the Go structure.
 | `domain/entities/capability.go` | entity | handshake | read by `tool_catalog.go` |
 | `domain/entities/connection_state.go` | entity | `connection.go` | read by `status` |
 | `domain/entities/tool_catalog.go` | entity (pure gate) | `connection.go` | capabilities in, tool names out |
-| `domain/entities/reader_endpoint.go` | entity | wiring / the probe | read by `connection.go`, `list_readers` |
-| `domain/entities/reader_listing.go` | entity | `connection.go` | endpoints joined with liveness |
+| `domain/entities/endpoint.go` | entity | wiring | read by `connection.go`, the probe |
+| `domain/entities/configured_reader.go` | entity | wiring | read by `connection.go`, `list_readers` |
+| `domain/entities/reader_listing.go` | entity | `connection.go` | readers and endpoints joined with liveness |
 | `domain/controllers/connection.go` | controller | wiring | dialer, probe, publisher, clock, log, catalog, endpoints |
 | `domain/controllers/tools/*.go` | controllers (one per tool) | `registry.go` | one port each, via `ToolContext` |
 | `domain/controllers/tools/tool_context.go` | parameter object | per call | ports + `ReaderSession` + clock |
@@ -717,11 +755,17 @@ the Go structure.
    compiles out cleanly on Linux.
 2. The binary is statically linked (`CGO_ENABLED=0`) and runs with no runtime
    installed.
-3. A freshly started server advertises exactly the four ungated tools, has
-   **not** dialed anything, and `status` reports `Disconnected`.
-4. With the bridge listening, `list_readers` reports it as live; with the bridge
-   stopped, the same endpoint reports not listening. A listening pipe that is not
-   in the configuration is **not** reported and cannot be connected to.
+3. A freshly started server **with no arguments** advertises exactly the four
+   ungated tools, has **not** dialed anything, `status` reports `Disconnected`,
+   and `list_readers` reports the shipped readers from the embedded defaults.
+4. With the bridge listening, `list_readers` reports that endpoint as live; with
+   the bridge stopped, it reports not listening. A listening pipe belonging to no
+   known reader is **not** reported and cannot be connected to.
+4a. Switching the NVDA bridge from pipe to loopback TCP in its dialog needs no
+   server configuration: `connect_reader nvda` tries the endpoints in declared
+   order and reports which one answered.
+4b. `--reader`, `--config` and the embedded defaults compose with flags winning,
+   and `--print-default-config` emits exactly the embedded JSON.
 5. `connect_reader` publishes the gated tools without restarting the server, and
    `screenreader://info` reports the reader's name, version and capabilities.
    The `mode` passed to `connect_reader` is the mode `hello` established.
