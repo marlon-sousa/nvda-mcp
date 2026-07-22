@@ -24,6 +24,7 @@ import os
 import buildVersion
 import globalPluginHandler
 import globalVars
+import gui
 import ui
 import wx
 from logHandler import log
@@ -40,6 +41,7 @@ from .adapters.nvda_session_signals import NvdaSessionSignals
 from .adapters.simple_event_bus import SimpleEventBus
 from .adapters.text_config_file import TextConfigFile
 from .domain.entities.connection_mode import ConnectionMode
+from .views.bridge_dialog import BridgeDialog
 from .wiring import build_session
 
 
@@ -87,6 +89,9 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 			return build_session(transport, factory, logs_dir, nvda_version, signals, announcer, log_capture)
 
 		self._server = BridgeServer(listener, make_session, event_bus=self._event_bus)
+		self._tools_menu_item: wx.MenuItem | None = None
+
+		self._register_tools_menu_item()
 
 		if self._config.get_auto_start():
 			try:
@@ -97,6 +102,50 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 				# not break addon load: log it and stay stopped. The control dialog
 				# (PR C) lets the user retry.
 				log.error("nvdaMcpBridge: could not start the bridge server", exc_info=True)
+
+	# -- menu -----------------------------------------------------------------
+
+	def _register_tools_menu_item(self) -> None:
+		"""Add "NVDA MCP Bridge…" to NVDA's Tools menu.
+
+		Guarded so reloads don't double-add. On systems where the NVDA GUI is
+		not available (e.g. secure mode, no display) this is a no-op.
+		"""
+		if self._tools_menu_item is not None:
+			return  # already registered (reload)
+		try:
+			tools_menu = gui.mainFrame.sysTrayIcon.toolsMenu
+		except Exception:
+			# No GUI available; the addon still works, just without the dialog.
+			return
+		# Translators: Menu item in NVDA's Tools menu to open the NVDA MCP Bridge dialog.
+		self._tools_menu_item = tools_menu.Append(
+			wx.ID_ANY, _("NVDA MCP &Bridge…"),
+		)
+		gui.mainFrame.sysTrayIcon.Bind(
+			wx.EVT_MENU, lambda evt: self._show_bridge_dialog(), self._tools_menu_item
+		)
+
+	def _remove_tools_menu_item(self) -> None:
+		"""Remove the Tools menu item; called from terminate()."""
+		item = self._tools_menu_item
+		if item is None:
+			return
+		try:
+			tools_menu = gui.mainFrame.sysTrayIcon.toolsMenu
+		except Exception:
+			return
+		tools_menu.Remove(item)
+		self._tools_menu_item = None
+
+	def _show_bridge_dialog(self) -> None:
+		"""Open the bridge control dialog, injecting real dependencies."""
+		# The dialog is modal (consistent with NVDA's own Tools-menu dialogs like
+		# the Log Viewer).
+		dlg = BridgeDialog(gui.mainFrame, self._server, self._config, self._event_bus)
+		dlg.set_plugin(self)
+		dlg.ShowModal()
+		dlg.Destroy()
 
 	# -- server lifecycle ------------------------------------------------------
 
@@ -127,4 +176,5 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
 
 	def terminate(self) -> None:
 		self._server.stop()
+		self._remove_tools_menu_item()
 		super().terminate()
