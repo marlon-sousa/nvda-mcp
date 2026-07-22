@@ -574,15 +574,37 @@ exists, and live in the same directory:
 | `list_readers` | — | The `ReaderListing`: configured and discovered endpoints, each with liveness where knowable. |
 | `connect_reader` | `reader`, `mode`, `log_level?` | Dials that endpoint, handshakes, publishes the gated tools. Errors if a session is already live. `reader` may be omitted when exactly one endpoint is known. |
 | `disconnect_reader` | — | Sends `bye`, retracts the gated tools. |
-| `status` | — | Connection state, reason, and the current `ReaderSession` if any. |
+| `status` | — | Connection state, reason, and the current `ReaderSession` if any. When a session is live it **also makes a real `ping` round trip** and reports the outcome, so the answer is proof rather than possibly-stale local state. |
 
 `mode` and `log_level` are tool parameters and not CLI flags precisely because
 the wire contract fixes them at `hello` for the session's lifetime: the agent
 opening the session is the party that knows what the session is for.
 
-`ping`, `echo` and `bye` are not tools: `ping` is the heartbeat the connection
-controller sends, `bye` is what `disconnect_reader` sends, `echo` is a
-diagnostic the agent has no use for.
+**`ping`, `echo` and `bye` are not tools** (agreed 2026-07-22). `bye` is what
+`disconnect_reader` sends, and a second path to the same effect would only let
+the agent end a session without the server updating its own state. `ping` is the
+heartbeat the connection controller sends; what an agent actually wants from it
+is "is this connection real right now?", which `status`' round trip answers
+directly. `echo` proves framing, correlation and dispatch end to end — a
+developer's question, asked by the 10c conformance tests, not by an agent. Every
+advertised tool is tokens in every agent request, so a tool that answers nobody's
+question is a real cost; a diagnostic tool can be added later if hand-debugging a
+live install ever needs one.
+
+### An idle agent loses its session — by design
+
+The bridge runs two watchdogs ([protocol.md §6](wire/v1/protocol.md)): the
+heartbeat, which any message resets, and command inactivity, which **only a real
+command** resets — `ping` deliberately does not, so a keepalive cannot mask an
+abandoned session. The server's heartbeat therefore keeps the connection honest
+without keeping an idle session alive.
+
+The consequence, which implementers and agents both need to know: a long agent
+pause ends the session. The server observes the loss, retracts the gated tools,
+and the next `connect_reader` opens a **fresh** session — new transcript, new
+NVDA log capture, indices starting over. That is the contract working as
+intended, not a defect, and it is a second reason `status` reports what the wire
+says rather than what the server remembers.
 
 `registry.go` is an explicit hand-written map, read top to bottom — same
 reasoning as the bridge's registry and `wiring.go`: no decorator
