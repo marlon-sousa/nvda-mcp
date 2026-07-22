@@ -3,3 +3,8 @@
 # default is autocrlf=true) so the CI drift gate compares like against like on
 # windows-latest instead of flagging pure line-ending churn.
 specs/wire/v1/schema.json text eol=lf
+
+# Same reasoning one layer up: wiregen writes LF, so its committed golden output
+# is pinned to LF too. Without this the golden test compares LF against a
+# CRLF checkout and fails on windows-latest over line endings alone.
+server/tools/wiregen/testdata/* text eol=lf

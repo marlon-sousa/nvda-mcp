@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "wiregen fixture contract",
+  "protocolVersion": 7,
+  "$defs": {
+    "Inner": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": true
+    },
+    "Sample": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "count": {
+          "type": "integer"
+        },
+        "ratio": {
+          "type": "number"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "optionalNote": {
+          "type": "string"
+        },
+        "requiredNullable": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "optionalNullable": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "inners": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Inner"
+          }
+        },
+        "modes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "silent",
+              "live"
+            ]
+          }
+        },
+        "opaque": {},
+        "bag": {
+          "type": "object",
+          "additionalProperties": {}
+        },
+        "nvdaLogPath": {
+          "type": "string"
+        },
+        "inner": {
+          "$ref": "#/$defs/Inner"
+        }
+      },
+      "required": [
+        "name",
+        "count",
+        "ratio",
+        "ok",
+        "requiredNullable",
+        "inners",
+        "modes",
+        "opaque",
+        "bag",
+        "nvdaLogPath",
+        "inner"
+      ],
+      "additionalProperties": true
+    }
+  },
+  "commands": {
+    "hello": {
+      "params": null,
+      "result": {
+        "$ref": "#/$defs/Sample"
+      }
+    },
+    "getSpeech": {
+      "params": {
+        "$ref": "#/$defs/Inner"
+      },
+      "result": {
+        "$ref": "#/$defs/Sample"
+      }
+    }
+  }
+}
