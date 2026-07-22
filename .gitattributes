@@ -8,3 +8,8 @@ specs/wire/v1/schema.json text eol=lf
 # is pinned to LF too. Without this the golden test compares LF against a
 # CRLF checkout and fails on windows-latest over line endings alone.
 server/tools/wiregen/testdata/* text eol=lf
+
+# And the generated binding itself, for the same reason: `go generate` writes
+# LF, so without this a regeneration leaves the working tree looking modified
+# on a CRLF checkout even when nothing about the contract changed.
+server/adapters/wire/*.gen.go text eol=lf
