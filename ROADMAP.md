@@ -190,14 +190,23 @@ a headless B follow-up) and amended the scope of entries 9 and 12.
     milestones 5–6. The live-NVDA integration tests here are what prove each
     real adapter behaves like its fake — findings spawn iteration entries
     (E.1, E.2, …) in this board.
-12. F, packaging/release: scons `.nvda-addon` artifact, server distribution,
-    GitHub release workflow. Spec: none yet → specify when reached. Scope
-    sketch: RFC 0001 milestone 7, plus the decision list from
-    [spec 0005](specs/0005-multi-reader-direction.md): server implementation
-    language (Python + PyInstaller vs a Go port judged against the published
-    wire contract), umbrella Windows installer vs per-channel-only
-    distribution (NVDA add-on store stays canonical for the add-on), and an
-    `.mcpb` bundle for Claude Desktop users.
+12. F, packaging/release — split into two entries (agreed 2026-07-22), because
+    the bridge's release path is decidable now while the server's distribution
+    still has open questions from [spec 0005](specs/0005-multi-reader-direction.md).
+    Spec: [0012](specs/0012-packaging-and-release.md) (12a).
+    - **12a** — **Done (PR #25, 2026-07-22)**: the per-component tagging scheme
+      shared by every component (`<component>-v<semver>`, version read from the
+      component's own manifest and verified against the tag), plus the bridge's
+      release workflow (tag `nvda-bridge-v*` → draft GitHub release carrying the
+      `.nvda-addon`), the path-filtered PR add-on build, and the PR comment
+      linking it. `ci.yml`'s gate jobs stay unconditional and unchanged.
+    - **12b** — server distribution. Spec: none yet → specify when reached.
+      Scope sketch: RFC 0001 milestone 7, plus the remaining decision list from
+      spec 0005: server implementation language (Python + PyInstaller vs a Go
+      port judged against the published wire contract), umbrella Windows
+      installer vs per-channel-only distribution (NVDA add-on store stays
+      canonical for the add-on), and an `.mcpb` bundle for Claude Desktop users.
+      The `server-v*` tag namespace is reserved by 12a.
 
 ## Principles — **Decided**
 

@@ -16,14 +16,21 @@ The chain, top to bottom — each item talks only to the next:
 
 1. An MCP client (Claude Code, …) speaks MCP over stdio to the server.
 2. The `nvda-mcp` server — a Python package ([mcpServer/](mcpServer/)) on the
-   official `mcp` SDK (FastMCP) — speaks JSON lines over TCP, 127.0.0.1 only,
-   to the bridge.
-3. `nvdaMcpBridge` — an NVDA add-on ([bridges/nvda/](bridges/nvda/)): global
-   plugin + spy synth driver — drives NVDA itself.
+   official `mcp` SDK (FastMCP) — speaks JSON lines to the bridge over a local
+   endpoint: a named pipe by default, or loopback TCP
+   ([spec 0010](specs/0010-named-pipe-transport.md), [0011](specs/0011-bridge-control-ui.md)).
+3. `nvdaMcpBridge` — an NVDA add-on ([bridges/nvda/](bridges/nvda/)): a global
+   plugin that captures speech through a `filter_speechSequence` filter, leaving
+   the user's real synthesizer loaded
+   ([spec 0008](specs/0008-transparent-silent-capture.md)) — drives NVDA itself.
 
 The server survives NVDA restarts (restarting NVDA is itself a test operation),
 and NVDA's embedded Python is a poor host for an asyncio MCP stdio server, so
-the two halves are split and meet only at the loopback socket.
+the two halves are split and meet only at that local endpoint.
+
+What must match between them is the **wire protocol version**, not their version
+numbers: `hello` compares `PROTOCOL_VERSION` and never the components' own
+versions, so each releases on its own cadence.
 
 ## Repository layout
 
@@ -58,8 +65,37 @@ uv run --directory bridges/nvda pyright   # or: cd bridges/nvda && scons   to bu
 Wire the server into Claude Code from source:
 
 ```sh
-claude mcp add --scope user nvda -- uv run --directory C:\projects\nvda-mcp\mcpServer nvda-mcp
+claude mcp add --scope user nvda -- uv run --directory C:\projects\screen-readers-mcp\mcpServer nvda-mcp
 ```
+
+## Releasing
+
+Each component is released by its own **prefixed tag**, so one tag selects one
+component and one set of release assets:
+
+| Tag | Releases |
+|---|---|
+| `nvda-bridge-v0.2.0` | `nvdaMcpBridge-0.2.0.nvda-addon` |
+| `server-v0.3.1` | the server distribution (entry 12b — not implemented yet) |
+
+The version is **never written in the tag alone**: it lives in the component's
+own manifest (`bridges/nvda/buildVars.py` for the add-on) and the release
+workflow fails if the tag disagrees. Release notes come from
+`addon_changelog` in that same file. Tag only commits that are merged to `main`:
+
+```sh
+git tag -a nvda-bridge-v0.2.0 -m "Version 0.2.0"
+git push origin nvda-bridge-v0.2.0
+```
+
+The workflow publishes a **draft** release — review it, then publish, then use
+the `submit-nvda-addon` skill for the store. Pull requests touching
+`bridges/nvda/` or `shared/` get the packaged add-on built and linked in a PR
+comment automatically.
+
+Full rationale, including why the tag uses a dash rather than a slash and why
+the merge gates are not path-filtered:
+[spec 0012](specs/0012-packaging-and-release.md).
 
 ## Status
 
@@ -70,5 +106,4 @@ The larger arcs (sessions A–F) are described in
 
 ## License
 
-GPL v2. See [LICENSE](LICENSE) / COPYING.txt. The bridge's spy synth driver is
-adapted from NVDA's own GPL-2 system-test suite.
+GPL v2. See [LICENSE](LICENSE) / COPYING.txt.

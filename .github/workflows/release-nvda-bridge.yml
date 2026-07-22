@@ -3,10 +3,9 @@ name: Release NVDA bridge
 # Publishes the NVDA add-on as a DRAFT GitHub release.
 #
 # TAGGING (monorepo): every component is tagged with its own prefix, so one tag
-# selects one component and one asset set:
-#
-#     nvda-bridge-v0.2.0   ->  nvdaMcpBridge-0.2.0.nvda-addon   (this workflow)
-#     server-v0.3.1        ->  the server distribution          (not written yet)
+# selects one component and one asset set. Tag "nvda-bridge-v0.2.0" releases
+# nvdaMcpBridge-0.2.0.nvda-addon (this workflow); tag "server-v0.3.1" will
+# release the server distribution (that workflow is not written yet).
 #
 # A dash, not a slash: a slash in a tag is URL-encoded as %2F in the release
 # asset download URL, and that URL is what the add-on store entry links to.
