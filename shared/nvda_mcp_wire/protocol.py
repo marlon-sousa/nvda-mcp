@@ -36,6 +36,7 @@ def _empty_dict() -> dict[str, Any]:
 __all__ = [
 	"PROTOCOL_VERSION",
 	"DEFAULT_PORT",
+	"DEFAULT_PIPE_NAME",
 	"CaptureMode",
 	"LogLevel",
 	"Capability",
@@ -84,6 +85,12 @@ PROTOCOL_VERSION: Final = 1
 
 #: Default loopback TCP port the bridge listens on.
 DEFAULT_PORT: Final = 8765
+
+#: Default Windows named pipe a bridge may listen on instead of (or alongside,
+#: in a config-selectable future) loopback TCP -- spec 0010. Local-machine-only
+#: by construction (PIPE_REJECT_REMOTE_CLIENTS + an owner-only DACL on the
+#: listener side), the pipe analogue of "never bind a routable interface".
+DEFAULT_PIPE_NAME: Final = r"\\.\pipe\nvdaMcpBridge"
 
 
 class CaptureMode(StrEnum):

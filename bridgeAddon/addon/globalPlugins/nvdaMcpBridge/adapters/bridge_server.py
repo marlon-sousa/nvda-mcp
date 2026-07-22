@@ -8,11 +8,13 @@
 #       decision, unit-tested against a fake seam) one level further out.
 # HOLDS: a Listener (the accepting seam) and a session_factory that turns an
 #        accepted Transport into a Session; it owns the server thread.
-# BUILT BY: plugin.py in session C (real TcpListener + a factory closing over
-#           wiring.build_session); by tests with a FakeListener + fake factory.
+# BUILT BY: plugin.py (a real NamedPipeListener, spec 0010, + a factory closing
+#           over wiring.build_session); by tests with a FakeListener + fake
+#           factory, or a real TcpListener/NamedPipeListener in the socket/pipe
+#           integration scenarios.
 # USED BY: the plugin now (start on init, stop on terminate/panic); the entry
-#          9.1 control dialog next -- which is why start/stop and an observable
-#          `status` snapshot are the whole public surface.
+#          9.1b control dialog next -- which is why start/stop and an
+#          observable `status` snapshot are the whole public surface.
 #
 # It owns exactly the connection lifecycle and touches no synths: the Session's
 # teardown promise (restore the user's synth in a finally) is the Session's job.

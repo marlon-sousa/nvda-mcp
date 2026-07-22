@@ -217,6 +217,10 @@ def test_default_port() -> None:
 	assert p.DEFAULT_PORT == 8765
 
 
+def test_default_pipe_name() -> None:
+	assert p.DEFAULT_PIPE_NAME == r"\\.\pipe\nvdaMcpBridge"
+
+
 def test_capture_modes() -> None:
 	assert {m.value for m in p.CaptureMode} == {"silent", "live"}
 

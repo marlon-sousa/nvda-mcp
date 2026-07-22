@@ -122,21 +122,39 @@ a headless B follow-up) and amended the scope of entries 9 and 12.
      loaded; it cannot strand the user mute), and the PR added session beeps,
      the `announce` hint command, crashed-client resilience, and a build
      dependency fix. See [spec 0008](specs/0008-transparent-silent-capture.md).
-9.1. C follow-up, bridge control UI + connection config (agreed 2026-07-18):
-   an NVDA menu → Tools entry opening a bridge dialog — connection-mode combo
-   (Local: named pipe; Remote: TCP/IP, **greyed out** — see below), status
-   indicator showing the accepting endpoint, Start/Stop buttons driving entry
-   9's lifecycle controller, and an auto-start checkbox — all persisted to
-   NVDA config. Adds the named-pipe transport leaf (ctypes, stdlib-only)
-   behind the existing Transport seam; loopback TCP stays available as a
-   config-only compat path (no UI) until the server dials pipes, then
-   retires. The wire spec's transport section (`specs/wire/v1/protocol.md`
-   §1) is amended in this PR. **Remote TCP is deferred — Decided**: it is
-   remote keystroke injection (`pressGesture`) and config write (`setConfig`),
-   so enabling it is a future entry with its own security spec (explicit
-   warning + bridge-generated access token presented in `hello`); until then
-   the combo shows it disabled. Needs live NVDA (GUI checklist). Spec: none
-   yet → specify first, after entry 9's spec.
+9.1. C follow-up, bridge control UI + connection config (agreed 2026-07-18;
+   split into 9.1a/9.1b 2026-07-21 — the transport leaf has no UI dependency,
+   so it does not need to wait behind the dialog).
+   - **9.1a** — **Done (PR #18, 2026-07-21)**: the named-pipe transport leaf (ctypes,
+     stdlib-only) — `NamedPipeListener`/`NamedPipeTransport`, implementing the
+     existing `Listener`/`Transport` seams exactly, so either can be handed to
+     `BridgeServer` interchangeably with `TcpListener`/`SocketTransport`.
+     Local-machine-only by construction (`PIPE_REJECT_REMOTE_CLIENTS` + an
+     owner-only DACL, the pipe analogue of the loopback-only bind). Proven by
+     a real-named-pipe headless integration scenario in CI, the same tier of
+     proof 9a gave the TCP leaf, **and then by a live-NVDA check against a
+     real, running NVDA** (`test_live_nvda_pipe_e2e.py`: handshake, a
+     silent-mode gesture captured, two sequential sessions) — on the strength
+     of that result, `plugin.py` was flipped to the pipe as the default in
+     this same PR (amendment to spec 0010), rather than waiting for 9.1b.
+     `TcpListener` stays in the tree, unwired, as 9.1b's compat option.
+     `DEFAULT_PIPE_NAME` added to the shared wire module; the wire spec's
+     transport section (`specs/wire/v1/protocol.md` §1) amended to describe
+     it. Spec: [0010-named-pipe-transport.md](specs/0010-named-pipe-transport.md).
+   - **9.1b** — an NVDA menu → Tools entry opening a bridge dialog —
+     connection-mode combo (Local: named pipe [default] / loopback TCP;
+     Remote: TCP/IP, **greyed out** — see below), status indicator showing
+     the accepting endpoint, Start/Stop buttons driving entry 9's lifecycle
+     controller, and an auto-start checkbox — all persisted to NVDA config.
+     The pipe is already the plugin's default (9.1a); this entry lets a user
+     *override* it back to loopback TCP via config, rather than making the
+     switch itself. **Remote TCP is deferred — Decided**: it is remote
+     keystroke injection (`pressGesture`) and config write (`setConfig`), so
+     enabling it is a future entry with its own security spec (explicit
+     warning + bridge-generated access token presented in `hello`); until
+     then the combo shows it disabled. Needs live NVDA (GUI checklist). Spec:
+     none yet → specify first, now that 9.1a has built, proven, and wired in
+     both `Listener` seams this entry's combo chooses between.
 9.2. C follow-up, NVDA log capture per session (agreed 2026-07-21): every
    session tees NVDA's own log to a fresh, session-scoped file for `hello` to
    teardown, so debugging an add-on no longer needs manual before/after

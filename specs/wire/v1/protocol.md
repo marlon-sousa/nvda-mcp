@@ -17,11 +17,20 @@ bridge depends on it, changes go through a version bump.
 
 ## 1. Transport and framing
 
-- The bridge **listens**; the server **dials**. The connection is a TCP socket
-  bound to loopback (`127.0.0.1`) only — never a routable interface. (An Android
-  TalkBack bridge is the anticipated exception, reached over an `adb`-forwarded
-  or Wi-Fi socket; it is still the listener.)
-- Default port: **8765** (`DEFAULT_PORT`).
+- The bridge **listens**; the server **dials**. The connection is always
+  local-machine-only — never a routable interface. (An Android TalkBack
+  bridge is the anticipated exception, reached over an `adb`-forwarded or
+  Wi-Fi socket; it is still the listener.) A Windows bridge may offer either
+  (or both, config-selectable) of:
+  - a **TCP socket** bound to loopback (`127.0.0.1`) only. Default port:
+    **8765** (`DEFAULT_PORT`).
+  - a **Windows named pipe** (spec 0010), rejecting remote clients
+    (`PIPE_REJECT_REMOTE_CLIENTS`) and restricted by DACL to the owning
+    user — the pipe analogue of the loopback-only bind. Default name:
+    `\\.\pipe\nvdaMcpBridge` (`DEFAULT_PIPE_NAME`).
+  Either way the framing and every command below are identical: the choice of
+  transport is a connection-establishment detail, invisible once `hello` has
+  completed.
 - Framing is **JSON Lines**: each message is one JSON **object**, UTF-8 encoded,
   serialized without embedded newlines, terminated by a single `\n`. A reader
   reassembles chunks into newline-delimited frames and must drain any complete
