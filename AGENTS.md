@@ -377,8 +377,10 @@ make the port pointless for testing.
      `markdownExtensions = []`, which has no Mermaid support: a fenced block
      ships into the `.nvda-addon` as literal `graph TD` source, and that file is
      the Help an NVDA user reads in the Add-on Manager. Those documents stay
-     prose, lists and tables. Mermaid is for what GitHub renders — the root
-     README, `specs/`, `ROADMAP.md`, and PR and issue bodies.
+     prose, lists and tables. Everywhere else Mermaid renders and is welcome:
+     GitHub (root README, `ROADMAP.md`, PR and issue bodies) and VS Code's
+     markdown preview — which is where **specs are reviewed**, so `specs/` is a
+     first-class place for a diagram, not a grudging exception.
 
 ## Dev commands
 
