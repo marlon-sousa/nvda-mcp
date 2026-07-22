@@ -25,14 +25,25 @@ a monorepo until a second bridge is real.
 The chain, top to bottom — each item talks only to the next:
 
 1. An MCP client (Claude Code, …) speaks MCP over stdio to the server.
-2. `mcpServer/` — the `nvda-mcp` Python package — speaks JSON lines over TCP,
-   127.0.0.1 only, to the bridge.
-3. `bridges/nvda/` — the `nvdaMcpBridge` NVDA addon (global plugin + spy synth
-   driver) — drives NVDA itself.
+2. `mcpServer/` — the `nvda-mcp` Python package — speaks JSON lines to the
+   bridge over a **local endpoint**: a named pipe (`\\.\pipe\nvdaMcpBridge`) by
+   default, or loopback TCP (`127.0.0.1:8765`), chosen in the bridge's control
+   dialog ([spec 0010](specs/0010-named-pipe-transport.md),
+   [0011](specs/0011-bridge-control-ui.md)).
+3. `bridges/nvda/` — the `nvdaMcpBridge` NVDA addon (a global plugin) — drives
+   NVDA itself. Silent capture registers a `filter_speechSequence` filter and
+   **never swaps the synth**; the user's real synthesizer stays loaded, so a
+   crash cannot strand them mute
+   ([spec 0008](specs/0008-transparent-silent-capture.md)).
 
-The two halves are separate processes and meet **only at the loopback socket**,
+The two halves are separate processes and meet **only at that local endpoint**,
 so the server survives NVDA restarts and NVDA's embedded Python never hosts the
 asyncio MCP server.
+
+What must match between them is the **wire protocol version**, not their
+version numbers: `hello` compares `PROTOCOL_VERSION` and never the components'
+own versions, so each releases on its own cadence
+([spec 0012](specs/0012-packaging-and-release.md)).
 
 ## Layout
 
@@ -85,13 +96,20 @@ ports.
 Bridge (`bridges/nvda/addon/globalPlugins/nvdaMcpBridge/`): the Session
 lifecycle in `domain/controllers/session.py` (+ `teardown_reason.py`), the
 per-command handlers under `domain/controllers/commands/` (see "Command
-handlers" below); entities `speech_buffer.py` / `braille_buffer.py`; ports
+handlers" below); entities `speech_buffer.py` / `braille_buffer.py` /
+`indexed_buffer.py` / `bridge_events.py` / `connection_mode.py`; ports
 `adapter_factory.py` (+ `AdapterSet`), `speech_source.py`, `braille_source.py`,
-`synth_swapper.py`, `gesture_sender.py`, plus `clock.py`, `message_channel.py`,
-`transcript.py`; adapters `json_lines_channel.py`, `file_transcript.py`,
-`text_file_writer.py`, `real_clock.py`, with `nvda_*.py` + `socket_transport.py`
-in session C. `protocol.py` (the synced shared wire module) sits at the package
-root, and `plugin.py` is the NVDA edge. Server (session D): `domain/` holds the
+`gesture_sender.py`, `announcer.py`, `session_signals.py`, `log.py`,
+`log_capture.py`, `bridge_config.py`, `event_bus.py`, plus `clock.py`,
+`message_channel.py`, `transcript.py`; adapters `json_lines_channel.py`,
+`file_transcript.py`, `text_file_writer.py`, `real_clock.py`, the `nvda_*.py`
+edge adapters, and the connection stack (`socket_transport.py`,
+`named_pipe_transport.py`, `tcp_listener.py`, `named_pipe_listener.py`,
+`build_listener.py`). `protocol.py` (the synced shared wire module) sits at the
+package root, `plugin.py` is the NVDA edge, and `views/bridge_dialog.py` is the
+control UI — a **driving actor**, not an adapter: it consumes ports rather than
+implementing one (see [spec 0011](specs/0011-bridge-control-ui.md)).
+Server (session D): `domain/` holds the
 tool translator + a `BridgeClient` port; adapters hold the FastMCP/stdio server
 and the real TCP bridge client.
 
@@ -248,9 +266,9 @@ a whole scenario end to end. Two kinds live here. **Headless** scenarios drive
 the real session stack (real dispatch, real JSON-lines framing) over a
 `LoopbackTransport` with a fake NVDA, no socket and no NVDA — so they **run in
 CI** like any unit test (e.g. `test_wire_session_roundtrip.py`, the recipe lane
-2 builds on). **Live-NVDA** scenarios (e.g. `test_silent_session_restores_synth.py`)
-need a real NVDA and are the only place that proves a *real* adapter behaves
-like its fake; those are milestone 6 and do not run in CI.
+2 builds on). **Live-NVDA** scenarios (`test_live_nvda_e2e.py`,
+`test_live_nvda_pipe_e2e.py`) need a real NVDA and are the only place that
+proves a *real* adapter behaves like its fake; they do not run in CI.
 
 Keep test module basenames unique across the tree (pytest's prepend import mode
 requires it). Mirroring gives that for free, since source basenames are unique.
