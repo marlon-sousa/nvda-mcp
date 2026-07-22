@@ -362,8 +362,25 @@ make the port pointless for testing.
    the same PR that implements the change.
 7. **All documentation and communication must be screen-reader friendly:** no
    ASCII-art diagrams, no box-drawing flowcharts. Prose, numbered lists,
-   headings, and tables only. (Indented path listings in code blocks are fine;
-   arrows-and-pipes drawings are not.)
+   headings, and tables. (Indented path listings in code blocks are fine;
+   arrows-and-pipes drawings are not.) **To draw a diagram, use Mermaid** — a
+   fenced code block tagged `mermaid`. It is text a screen reader can read as
+   source, and it renders for sighted readers, so it serves both without a
+   second version drifting out of date.
+   - **Every Mermaid block must carry `accTitle` and `accDescr`.** They become
+     the rendered SVG's accessible name and description; without them the
+     diagram is an unlabelled graphic. `accDescr` states what the diagram
+     *says*, not that it exists — "the agent reaches NVDA through two hops, the
+     MCP server and the bridge add-on", never "architecture diagram".
+   - **Not in the add-on docs.** `bridges/*/README.tpl.md` and anything under
+     `addon/doc/` are rendered by scons through python-markdown with
+     `markdownExtensions = []`, which has no Mermaid support: a fenced block
+     ships into the `.nvda-addon` as literal `graph TD` source, and that file is
+     the Help an NVDA user reads in the Add-on Manager. Those documents stay
+     prose, lists and tables. Everywhere else Mermaid renders and is welcome:
+     GitHub (root README, `ROADMAP.md`, PR and issue bodies) and VS Code's
+     markdown preview — which is where **specs are reviewed**, so `specs/` is a
+     first-class place for a diagram, not a grudging exception.
 
 ## Dev commands
 
