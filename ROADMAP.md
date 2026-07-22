@@ -52,11 +52,6 @@ a headless B follow-up) and amended the scope of entries 9 and 12.
 
 ## Status board — lane 1: bridge
 
-**Lane 1 is complete** as of 2026-07-22: every entry below is Done, milestones
-A–C are closed, and no lane-1 work is in flight. The known future lane-1 entry
-is Remote TCP, deferred under 9.1b with its own security spec; it is not
-scheduled. Work now proceeds in lane 2.
-
 1. **Done** — A, foundation: shared wire protocol + tests, server and addon
    scaffolds, CI, GPL-2.0-or-later licensing. Spec: RFC 0001. Merged as PR #1
    (2026-07-13).
@@ -146,29 +141,24 @@ scheduled. Work now proceeds in lane 2.
      `DEFAULT_PIPE_NAME` added to the shared wire module; the wire spec's
      transport section (`specs/wire/v1/protocol.md` §1) amended to describe
      it. Spec: [0010-named-pipe-transport.md](specs/0010-named-pipe-transport.md).
-   - **9.1b** — **Done (PRs #20, #21, #22, 2026-07-22)**: an NVDA menu → Tools
-     entry opening a bridge dialog — connection-mode combo (Local: named pipe
-     [default] / loopback TCP; Remote: TCP/IP, **greyed out** — see below),
-     status indicator showing the accepting endpoint, Start/Stop buttons
-     driving entry 9's lifecycle controller, and an auto-start checkbox — all
-     persisted to NVDA config. The pipe is already the plugin's default
-     (9.1a); this entry lets a user *override* it back to loopback TCP via
-     config, rather than making the switch itself. **Remote TCP is deferred —
-     Decided**: it is remote keystroke injection (`pressGesture`) and config
-     write (`setConfig`), so enabling it is a future entry with its own
-     security spec (explicit warning + bridge-generated access token presented
-     in `hello`); until then the combo shows it disabled. Delivered as three
-     sequential PRs: **#20** the domain foundation (`EventBus`, `Log`,
-     `BridgeConfig` ports + the `BridgeEvent` DTO), **#21** the adapters and
-     plugin wiring (`IniBridgeConfig`, the event bus, `BridgeServer` status
-     events), **#22** the dialog itself (`views/bridge_dialog.py`, Tools menu
-     registration) with the live-NVDA GUI checklist run against NVDA 2026.1.1
-     (results in the PR body). Spec:
-     [0011-bridge-control-ui.md](specs/0011-bridge-control-ui.md).
-9.2. **Done (PR #17, 2026-07-21)** — C follow-up, NVDA log capture per
-   session: every session tees NVDA's own log to a fresh, session-scoped file
-   for `hello` to teardown, so debugging an add-on no longer needs manual
-   before/after markers in `nvda.log`. `hello` gains an optional `logLevel` to temporarily
+   - **9.1b** — an NVDA menu → Tools entry opening a bridge dialog —
+     connection-mode combo (Local: named pipe [default] / loopback TCP;
+     Remote: TCP/IP, **greyed out** — see below), status indicator showing
+     the accepting endpoint, Start/Stop buttons driving entry 9's lifecycle
+     controller, and an auto-start checkbox — all persisted to NVDA config.
+     The pipe is already the plugin's default (9.1a); this entry lets a user
+     *override* it back to loopback TCP via config, rather than making the
+     switch itself. **Remote TCP is deferred — Decided**: it is remote
+     keystroke injection (`pressGesture`) and config write (`setConfig`), so
+     enabling it is a future entry with its own security spec (explicit
+     warning + bridge-generated access token presented in `hello`); until
+     then the combo shows it disabled. Needs live NVDA (GUI checklist). Spec:
+     none yet → specify first, now that 9.1a has built, proven, and wired in
+     both `Listener` seams this entry's combo chooses between.
+9.2. C follow-up, NVDA log capture per session (agreed 2026-07-21): every
+   session tees NVDA's own log to a fresh, session-scoped file for `hello` to
+   teardown, so debugging an add-on no longer needs manual before/after
+   markers in `nvda.log`. `hello` gains an optional `logLevel` to temporarily
    raise NVDA's own logging verbosity for the session (restored at
    teardown), alongside the always-on capture. A second, parallel artifact
    to the existing transcript (spec 0003) — NVDA's real diagnostic log, not
@@ -188,11 +178,9 @@ scheduled. Work now proceeds in lane 2.
     reader-agnostic chassis principles of
     [spec 0005](specs/0005-multi-reader-direction.md) (no reader conditionals;
     reader identity surfaced; reader vocabulary as opaque data; bridge
-    endpoint as composition-root config). Entry 9.1a made the named pipe the
-    bridge's default listener, so dialing **both** the pipe and loopback TCP
-    is in this entry's scope from the start (amended 2026-07-22, superseding
-    the earlier "small lane-2 follow-up" note) — the endpoint config the spec
-    designs must cover what the bridge actually listens on today.
+    endpoint as composition-root config). Once entry 9.1 lands, a small
+    lane-2 follow-up teaches the `BridgeClient` endpoint config to dial the
+    named pipe as well as TCP.
 
 ## Convergence (requires C and D both Done)
 
