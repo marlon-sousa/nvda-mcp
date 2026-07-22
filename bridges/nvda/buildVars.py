@@ -19,8 +19,8 @@ The add-on is inert until a session connects: it never swaps your synthesizer or
 	addon_changelog=_("""First release."""),
 	addon_version="0.1.0",
 	addon_author="Marlon Brandão de Sousa <marlon.bsousa@gmail.com>",
-	addon_url="https://github.com/marlon-sousa/nvda-mcp",
-	addon_sourceURL="https://github.com/marlon-sousa/nvda-mcp",
+	addon_url="https://github.com/marlon-sousa/screen-readers-mcp",
+	addon_sourceURL="https://github.com/marlon-sousa/screen-readers-mcp",
 	addon_docFileName="readme.html",
 	# 2026.1 is an addon API compat break point; nothing older can load this.
 	addon_minimumNVDAVersion="2026.1.0",

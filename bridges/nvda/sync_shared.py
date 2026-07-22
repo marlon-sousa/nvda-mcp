@@ -4,7 +4,7 @@
 #
 # The bridge imports the wire protocol as a LOCAL module (``from . import
 # protocol``) so the addon never carries a third-party dependency. The single
-# source of truth lives in ``../shared/nvda_mcp_wire/protocol.py``; this script
+# source of truth lives in ``../../shared/nvda_mcp_wire/protocol.py``; this script
 # copies it verbatim into the addon package. Run it (or scons, which invokes
 # the same copy) before type-checking or building the addon. The copied file is
 # gitignored -- it is a build artifact, never edited in place.
@@ -15,12 +15,12 @@ import sys
 from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
-SOURCE = _HERE.parent / "shared" / "nvda_mcp_wire" / "protocol.py"
+SOURCE = _HERE.parent.parent / "shared" / "nvda_mcp_wire" / "protocol.py"
 DEST = _HERE / "addon" / "globalPlugins" / "nvdaMcpBridge" / "protocol.py"
 
 _HEADER = (
 	"# AUTO-GENERATED COPY -- do not edit.\n"
-	"# Source of truth: shared/nvda_mcp_wire/protocol.py (run bridgeAddon/sync_shared.py).\n"
+	"# Source of truth: shared/nvda_mcp_wire/protocol.py (run bridges/nvda/sync_shared.py).\n"
 )
 
 

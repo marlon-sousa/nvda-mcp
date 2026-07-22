@@ -13,7 +13,7 @@
 # without NVDA running the addon) every test SKIPS at the dial. Run it locally
 # with NVDA up and the addon installed:
 #
-#     uv run --directory bridgeAddon --with pytest pytest tests/integration/test_live_nvda_e2e.py -v
+#     uv run --directory bridges/nvda --with pytest pytest tests/integration/test_live_nvda_e2e.py -v
 #
 # It reuses the addon's own SocketTransport + JsonLinesChannel as the client
 # side, exactly as the headless socket roundtrip does -- the wire is symmetric.

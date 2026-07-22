@@ -18,7 +18,7 @@ The chain, top to bottom — each item talks only to the next:
 2. The `nvda-mcp` server — a Python package ([mcpServer/](mcpServer/)) on the
    official `mcp` SDK (FastMCP) — speaks JSON lines over TCP, 127.0.0.1 only,
    to the bridge.
-3. `nvdaMcpBridge` — an NVDA add-on ([bridgeAddon/](bridgeAddon/)): global
+3. `nvdaMcpBridge` — an NVDA add-on ([bridges/nvda/](bridges/nvda/)): global
    plugin + spy synth driver — drives NVDA itself.
 
 The server survives NVDA restarts (restarting NVDA is itself a test operation),
@@ -31,7 +31,7 @@ the two halves are split and meet only at the loopback socket.
 |---|---|
 | [shared/](shared/) | Canonical **stdlib-only** JSON-lines wire protocol (`nvda-mcp-wire`), shared verbatim by both halves and unit-tested once. |
 | [mcpServer/](mcpServer/) | The MCP server (`nvda-mcp`): MCP tool call → bridge command → result. |
-| [bridgeAddon/](bridgeAddon/) | The NVDA add-on (`nvdaMcpBridge`), built with scons. Its build copies `shared/`'s protocol module in, so bridge and server can never drift. |
+| [bridges/nvda/](bridges/nvda/) | The NVDA add-on (`nvdaMcpBridge`), built with scons. Its build copies `shared/`'s protocol module in, so bridge and server can never drift. |
 | [specs/](specs/) | Numbered design specs (RFC-style). |
 
 ## Development
@@ -50,9 +50,9 @@ uv run --directory mcpServer pytest
 uv run --directory mcpServer pyright
 
 # Bridge add-on: sync the shared wire module in, then headless tests + type check
-py -3.13 bridgeAddon/sync_shared.py
-uv run --directory bridgeAddon pytest
-uv run --directory bridgeAddon pyright   # or: cd bridgeAddon && scons   to build the .nvda-addon
+py -3.13 bridges/nvda/sync_shared.py
+uv run --directory bridges/nvda pytest
+uv run --directory bridges/nvda pyright   # or: cd bridges/nvda && scons   to build the .nvda-addon
 ```
 
 Wire the server into Claude Code from source:

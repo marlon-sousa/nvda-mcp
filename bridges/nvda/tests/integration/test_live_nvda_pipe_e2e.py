@@ -13,7 +13,7 @@
 # Run it locally with NVDA up, the pipe-listening build of the addon
 # installed, and plugins reloaded (NVDA+control+F3):
 #
-#     uv run --directory bridgeAddon --with pytest pytest tests/integration/test_live_nvda_pipe_e2e.py -v
+#     uv run --directory bridges/nvda --with pytest pytest tests/integration/test_live_nvda_pipe_e2e.py -v
 
 from __future__ import annotations
 
