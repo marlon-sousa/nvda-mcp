@@ -56,6 +56,8 @@ exclude = ["sconstruct", ".git", "__pycache__"]
 ignore = [
     "addon/globalPlugins/nvdaMcpBridge/plugin.py",
     "addon/globalPlugins/nvdaMcpBridge/adapters/nvda_*.py",
+    "addon/globalPlugins/nvdaMcpBridge/adapters/ini_bridge_config.py",
+    "addon/globalPlugins/nvdaMcpBridge/views/",
 ]
 
 # So `import nvdaMcpBridge.*` (the package) and `import fakes` (test helpers)
@@ -64,3 +66,9 @@ extraPaths = ["./addon/globalPlugins", "./tests"]
 
 analyzeUnannotatedFunctions = true
 reportMissingModuleSource = false
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.411",
+    "pytest>=9.1.1",
+]

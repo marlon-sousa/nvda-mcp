@@ -141,20 +141,18 @@ a headless B follow-up) and amended the scope of entries 9 and 12.
      `DEFAULT_PIPE_NAME` added to the shared wire module; the wire spec's
      transport section (`specs/wire/v1/protocol.md` §1) amended to describe
      it. Spec: [0010-named-pipe-transport.md](specs/0010-named-pipe-transport.md).
-   - **9.1b** — an NVDA menu → Tools entry opening a bridge dialog —
-     connection-mode combo (Local: named pipe [default] / loopback TCP;
-     Remote: TCP/IP, **greyed out** — see below), status indicator showing
-     the accepting endpoint, Start/Stop buttons driving entry 9's lifecycle
-     controller, and an auto-start checkbox — all persisted to NVDA config.
-     The pipe is already the plugin's default (9.1a); this entry lets a user
-     *override* it back to loopback TCP via config, rather than making the
-     switch itself. **Remote TCP is deferred — Decided**: it is remote
-     keystroke injection (`pressGesture`) and config write (`setConfig`), so
-     enabling it is a future entry with its own security spec (explicit
-     warning + bridge-generated access token presented in `hello`); until
-     then the combo shows it disabled. Needs live NVDA (GUI checklist). Spec:
-     none yet → specify first, now that 9.1a has built, proven, and wired in
-     both `Listener` seams this entry's combo chooses between.
+   - **9.1b** — **Done (PR #19, 2026-07-21)**: NVDA menu → Tools →
+     "NVDA MCP Bridge…" dialog — connection-mode combo (Local: named pipe
+     [default] / loopback TCP; Remote: TCP/IP, **greyed out**), status
+     indicator showing the accepting endpoint, Start/Stop buttons driving
+     entry 9's lifecycle controller, and an auto-start checkbox — all
+     persisted to a profile-independent `config.ini`. The pipe is already
+     the plugin's default (9.1a); this entry lets a user *override* it back
+     to loopback TCP via config. **Remote TCP is deferred — Decided**:
+     it is remote keystroke injection (`pressGesture`) and config write
+     (`setConfig`), so enabling it is a future entry with its own security
+     spec; until then the combo shows it disabled. Spec:
+     [0011-bridge-control-ui.md](specs/0011-bridge-control-ui.md).
 9.2. C follow-up, NVDA log capture per session (agreed 2026-07-21): every
    session tees NVDA's own log to a fresh, session-scoped file for `hello` to
    teardown, so debugging an add-on no longer needs manual before/after
