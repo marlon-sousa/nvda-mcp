@@ -411,6 +411,75 @@ CI. Every file header states its **role and its relationships** — which port i
 implements, what it depends on, who builds it, who calls it — exactly as
 AGENTS.md requires of the bridge.
 
+## Testing — **Decided**
+
+Agreed in conversation 2026-07-22, before code, because the alternative is
+discovering it in review.
+
+### Doubles are hand-written fakes, never mock frameworks
+
+The bridge's rule carries over, and every reason for it is *stronger* in Go. No
+`gomock`, no `testify/mock`.
+
+- Contract drift is caught by the **compiler**. AGENTS.md justified rejecting
+  `Mock` partly because ABCs plus pyright already covered drift; in Go a
+  `var _ ports.SpeechReader = (*FakeSpeech)(nil)` assertion means a fake that
+  falls behind its port fails the build. `gomock`'s headline feature —
+  generated, compile-safe doubles — is redundant against an interface the
+  compiler enforces.
+- A hand-written fake here is 15–30 lines of struct and methods, so the cost
+  that makes mock frameworks tempting elsewhere barely exists.
+- Expectation-style mocks couple tests to call sequences, which is wrong for
+  code driven by protocols — wait loops, index arithmetic, state transitions —
+  where the assertion belongs on resulting behaviour, not on the call log.
+
+**Fakes may record calls.** A few assertions genuinely are about interaction:
+that the heartbeat sent `ping` on schedule, that `disconnect_reader` sent `bye`,
+that a refused first endpoint led to the second being dialed. Recording those in
+a slice inside a hand-written fake is a spy, not a mock framework, and stays
+within the rule. Default to asserting behaviour; reach for the recording only
+when the interaction *is* the requirement.
+
+The one test-only dependency worth taking is **`google/go-cmp`** for struct
+diffs — comparing a `ReaderListing` by hand produces unreadable failures.
+
+### The integration surface is the MCP boundary
+
+Integration tests assert **what an MCP client sees** — `tools/list`,
+`tools/call` results, resource reads — never internal state. The Go SDK's
+in-memory transports let a real client drive the real server in one process,
+with no stdio and no sockets, which is the server's equivalent of the bridge's
+`LoopbackTransport` wire-level scenario (7b).
+
+Four tiers, each catching what the tier below cannot:
+
+| Tier | What is real | What is faked | Runs |
+|---|---|---|---|
+| Unit | one package | its ports | everywhere |
+| **Headless integration** | the whole server: MCP client ↔ SDK server ↔ tools ↔ domain ↔ JSON-lines client | the bridge — a Go fake speaking real wire frames over `net.Pipe()` | CI, all platforms |
+| Real-transport | the pipe and TCP leaves against a real listener | the bridge's logic | CI, Windows |
+| Conformance (10c) | both implementations, real transport | nothing | CI, `windows-latest` |
+
+The headless tier carries most of the weight, and owns the scenarios that cross
+every layer:
+
+1. Connect → the gated tools appear → call one → disconnect → they retract.
+2. A fake bridge announcing **no braille**: the braille tool is never
+   advertised, and calling it anyway returns a structured capability error.
+3. A protocol-version mismatch: `connect_reader` errors naming both versions,
+   the process stays alive, `status` keeps saying why.
+4. The connection dying mid-call: the in-flight call fails cleanly, the tools
+   retract, and a later `connect_reader` opens a fresh session.
+5. A reader whose first endpoint refuses: the second is dialed and the result
+   reports which one answered.
+
+**What this tier structurally cannot catch, and why 10c exists:** a Go fake
+bridge encodes frames with the same `adapters/wire` package the server decodes
+with, so a bug *in the binding itself* is invisible — both sides would be wrong
+together, in agreement. Only the real Python bridge can catch that. It is the
+same argument AGENTS.md makes about unit fakes never proving a real adapter
+behaves like its fake, one level up.
+
 ## Delivery — three sequential PRs
 
 Delivered as three PRs on one spec, per the short-PR principle and the 9a/9b/9c
