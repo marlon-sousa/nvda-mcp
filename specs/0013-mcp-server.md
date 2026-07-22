@@ -22,16 +22,16 @@ knowledge, and no `if reader == …` anywhere.
 
 Three properties define it:
 
-1. **One bridge session per process.** The endpoint is composition-root config;
-   `hello` reports which reader actually answered. Driving two readers means
-   running two server processes, which every MCP host already multiplexes by
-   name.
+1. **One live bridge session at a time.** Endpoints come from the composition
+   root; `hello` reports which reader actually answered. Tools never take a
+   target parameter.
 2. **The advertised tool set is a function of the announced capabilities.** A
    reader without braille never shows a braille tool. The gate is keyed on
    capability strings, never on reader names.
-3. **The bridge is expected to be absent at startup.** The MCP host launches
-   the server long before the user has started NVDA, so connection is a
-   background loop and the tool list grows and shrinks with it.
+3. **The agent opens the session.** The server never dials on its own: it
+   publishes discovery and connect tools, and the agent asks what readers are
+   available and connects to one when it wants. The capability-gated tools
+   appear on connect and are retracted on disconnect.
 
 ## Decided
 
@@ -114,30 +114,42 @@ guards against:
 **A reader difference is never a protocol version.** JAWS having no braille is a
 capability, not a fork of the contract.
 
-### One bridge session per process
+### One live session at a time, and the agent opens it
 
-The server owns exactly one live bridge connection. Tools take no target
-parameter. The multi-reader story is multiple server processes:
+The server knows about **zero or more configured reader endpoints** and holds at
+most **one live bridge session**. Tools therefore take no target parameter, and
+the capability gate stays exact — it describes the one reader currently
+connected.
 
 ```json
 "mcpServers": {
-  "nvda":     { "command": "screenreader-mcp.exe", "args": ["--endpoint", "pipe:nvdaMcpBridge"] },
-  "talkback": { "command": "screenreader-mcp.exe", "args": ["--endpoint", "tcp:127.0.0.1:9010"] }
+  "screenreader": {
+    "command": "screenreader-mcp.exe",
+    "args": ["--reader", "nvda=pipe:nvdaMcpBridge",
+             "--reader", "talkback=tcp:127.0.0.1:9010"]
+  }
 }
 ```
 
-Alternatives considered and rejected for v1: a named endpoint map with a
-`select_reader` tool (adds a mode the model can get wrong, buys little); and N
-concurrent sessions with a target parameter on every tool (collapses the
-capability-gated tool list into a union with per-call errors, and makes buffers,
-indices and reconnect state per-target).
+Running one process per reader remains equally valid, and is the natural shape
+when the readers live on different hosts. The two arrangements differ only in
+where the list lives, not in the session model.
 
-What this gives up is **only server-side coordination** — a synchronized start
-across readers, one transcript spanning both, a "compare these two readers"
-tool. It does *not* give up cross-reader work in a single agent conversation:
-the MCP host exposes both tool sets at once, so the agent drives NVDA and reads
-back TalkBack by calling two namespaced tools. That is most of why concurrent
-sessions look overpriced.
+Rejected for v1: **N concurrent sessions** with a target parameter on every
+tool. It collapses the capability-gated tool list into a union with per-call
+errors, and makes indices, state and teardown per-target — real cost for a
+capability that is mostly wanted across *hosts* anyway (NVDA on the desktop,
+TalkBack on a phone), where two processes serve it natively.
+
+What one-at-a-time gives up is **only server-side coordination** — a
+synchronized start across readers, one transcript spanning both, a "compare
+these two readers" tool. It does *not* give up cross-reader work in a single
+agent conversation: the agent can connect, work, disconnect, and connect to the
+next reader, or the host can run two processes and expose both tool sets at
+once.
+
+Two ATs live on one Windows machine is hostile regardless — both hook the
+keyboard, both speak, and `pressGesture` lands wherever focus is.
 
 Two ATs on one Windows machine is hostile anyway — both hook the keyboard, both
 speak, and `pressGesture` lands wherever focus is. Real multi-reader work is
@@ -169,22 +181,70 @@ Three mechanisms, in order of how the agent meets them:
 `initialize.instructions` was considered for identity and rejected: it is frozen
 at handshake time, and the bridge usually connects later.
 
-### The bridge is absent at startup; the server stays alive anyway
+### Connection is agent-initiated — no auto-connect, no backoff
 
-The lifecycle, which the reconnect controller implements:
+The server **never dials on its own**. It starts, serves MCP, and waits. The
+agent discovers what is available and opens a session when it wants one:
 
-1. Start, serve MCP immediately, advertise only the ungated tools (`status`).
-2. Attempt to connect in the background; retry with backoff, forever.
-3. On a successful `hello`: verify the protocol version, record identity and
-   capabilities, publish the gated tools (the SDK emits `tools/list_changed`).
-4. On disconnect or read error: retract the gated tools, return to step 2.
-5. **Never exit** on a bridge problem. A process that dies gets restarted in a
-   loop by the MCP host, which is strictly worse than a process that reports
-   "no bridge". Only stdin EOF (the host closing the server) ends it.
+1. Start, serve MCP immediately, advertise only the ungated tools:
+   `list_readers`, `connect_reader`, `disconnect_reader`, `status`.
+2. `list_readers` reports the configured endpoints and, where it can be known
+   without connecting, whether a bridge is listening on each (see "Discovery"
+   below).
+3. `connect_reader` dials the chosen endpoint and performs the handshake. On a
+   successful `hello` the server verifies the protocol version, records identity
+   and capabilities, and publishes the gated tools (the SDK emits
+   `tools/list_changed`).
+4. `disconnect_reader` sends `bye` and retracts the gated tools. So does an
+   observed connection loss — the tools go away, and the agent is free to
+   connect again when it chooses.
+5. **Never exit** on a bridge problem, and never retry behind the agent's back.
+   Only stdin EOF (the host closing the server) ends the process.
 
-Protocol mismatch is a *reported* failure, not a crash: `status` says "bridge
-speaks protocol 2, this server speaks 1" and the loop keeps retrying, so
-restarting the add-on fixes it without restarting the host.
+This is what makes the session's own parameters agent-owned. The wire contract
+fixes the **capture mode** at `hello` for the whole session ([protocol.md
+§4](wire/v1/protocol.md)), and `logLevel` with it. Under auto-connect they would
+have to be CLI flags chosen by whoever wrote the host config, before anyone knew
+what the session was for; as `connect_reader` parameters they are chosen per
+session by the party that knows what it is about to do.
+
+A background retry loop was considered and rejected. It buys "the tools are
+there when you look" at the price of connection state changing under the agent
+mid-task, a reconnect racing a teardown, and a policy (backoff, ceiling, give-up)
+nobody asked for. Explicit connection is also legible in the transcript, which
+matters when the transcript is the artifact you debug an add-on with.
+
+Protocol mismatch is a *reported* failure, not a crash: `connect_reader` returns
+an error naming both versions, `status` keeps saying so, and the process stays
+up — restarting the add-on then connecting again fixes it without restarting the
+MCP host.
+
+`connect_reader` while a session is already live is an **error** telling the
+agent to disconnect first, rather than a silent switch that would pull the
+session out from under a multi-step task.
+
+### Discovery: configured endpoints, plus a live pipe scan
+
+`list_readers` answers "what do I have at my disposal" from two sources:
+
+1. **Configuration** — the endpoint list from the composition root, each with a
+   name, a transport and an address.
+2. **Liveness, where it is free.** On Windows the named-pipe namespace can be
+   enumerated by reading the `\\.\pipe\` directory, so the server can report
+   which bridges are *actually listening right now* without dialing them —
+   crucial, because the bridge accepts one session at a time and a probe that
+   connects would occupy that slot. A TCP endpoint cannot be tested without
+   connecting, so it is reported as configured, liveness unknown.
+
+This needs a published **pipe naming convention** so the scan can attribute a
+pipe to a reader: `<reader>McpBridge`, which the NVDA bridge's existing
+`\\.\pipe\nvdaMcpBridge` already satisfies (a future JAWS bridge would use
+`jawsMcpBridge`). The convention is added to the wire contract's prose — see
+"Amendment to the wire protocol prose".
+
+A pipe that matches the convention but is not in the configuration is reported
+as **discovered**, so a freshly installed bridge is usable without editing the
+host config first.
 
 ### stdout belongs to JSON-RPC
 
@@ -238,13 +298,15 @@ keep `go get` working. Not a reason to block this entry.
 ```mermaid
 flowchart TD
   accTitle: MCP server internal structure
-  accDescr: The MCP client speaks MCP over stdio to an adapter, which drives domain controllers through ports. A second adapter speaks JSON lines to one screen-reader bridge over a named pipe or loopback TCP. The domain sits between the two adapters and imports neither the MCP SDK nor the generated wire types.
+  accDescr: The MCP client speaks MCP over stdio to an adapter, which drives domain controllers through ports. The Connection controller dials a bridge only when the agent asks, and publishes the capability-gated tools back to the MCP adapter. A second adapter speaks JSON lines to one screen-reader bridge over a named pipe or loopback TCP, and a third enumerates the Windows pipe namespace to report which bridges are listening. The domain sits between the adapters and imports neither the MCP SDK nor the generated wire types.
 
   client[MCP client] -->|MCP over stdio| mcpad[adapters/mcp: SDK server]
   mcpad --> tools[domain/controllers/tools: one controller per tool]
-  mcpad --> conn[domain/controllers: Connection]
+  mcpad -->|list, connect, disconnect, status| conn[domain/controllers: Connection]
   conn --> catalog[domain/entities: ToolCatalog]
   conn -->|publishes gated tools| mcpad
+  conn --> probe[domain/ports: EndpointProbe]
+  probe --> scan[adapters/discovery: pipe scan, Windows only]
   tools --> ports[domain/ports: reader-facing ports]
   conn --> ports
   ports --> bridgead[adapters/bridge: JSON-lines client]
@@ -283,7 +345,9 @@ precedent. Lane 2 keeps at most one open PR at a time.
 
 - **10a** — the module, the generated wire types, and the bridge client: it can
   dial a bridge and complete a handshake, proven headlessly. No MCP surface.
-- **10b** — the MCP surface: tools, gate, resource, reconnect lifecycle.
+- **10b** — the MCP surface: the discovery and connect tools, the capability
+  gate, the per-capability tools, the info resource, the agent-driven
+  connection lifecycle.
 - **10c** — cross-language conformance in CI against the real Python bridge,
   plus release plumbing; flips the board entry.
 
@@ -315,6 +379,7 @@ One interface per file, all in domain vocabulary. Their DTOs live beside them
 | `focus_inspector.go` | port — focus capability | `FocusInfo()`. |
 | `state_inspector.go` | port — state capability | `State()`. |
 | `config_accessor.go` | port — config capability | `GetConfig(keyPath)`, `SetConfig(keyPath, value)`. |
+| `endpoint_probe.go` | port — liveness of configured endpoints | `Live() []string` — which endpoint names have a bridge listening, as far as can be known without connecting. Implemented by the pipe scanner. |
 | `clock.go` | port — time | `Now`, `Sleep`, injected everywhere; never `time.Sleep`. |
 | `log.go` | port — diagnostics | Keeps the domain away from `os.Stdout`. |
 
@@ -328,7 +393,9 @@ them all.
 |---|---|---|
 | `reader_session.go` | entity — what `hello` established | Reader name/version, capability set, mode, synth, `logPath`, `nvdaLogPath`, bridge protocol version. Immutable value. |
 | `capability.go` | entity — the capability vocabulary | Typed constants for the six groups, plus `Set` with `Has`. Unknown strings are retained and ignored, per protocol.md §4. |
-| `connection_state.go` | entity — the lifecycle state machine | `Disconnected` / `Connecting` / `Connected` / `Incompatible`, with the reason string `status` reports. |
+| `connection_state.go` | entity — the lifecycle state machine | `Disconnected` / `Connecting` / `Connected` / `Incompatible`, with the reason string `status` reports. No `Retrying`: the agent owns connection. |
+| `reader_endpoint.go` | entity — one configured or discovered endpoint | Name, transport kind, address, and its origin (`configured` / `discovered`). Immutable value built by wiring or the scanner. |
+| `reader_listing.go` | entity — what `list_readers` answers | Endpoints joined with liveness: listening / not listening / unknown (TCP). Pure; the join lives here, not in the tool. |
 
 ### 4. `server/internal/adapters/ports/transport.go` — the adapter seam
 
@@ -350,30 +417,49 @@ The upper/leaf split is AGENTS.md's rule applied unchanged: every decision lives
 in `json_lines_client.go`, tested against a fake seam; the leaves do nothing but
 call the OS.
 
-### 6. `server/internal/adapters/` — the remaining edges
+### 6. `server/internal/adapters/discovery/` — the pipe scan
+
+The layered rule again: the naming-convention decision sits one level above the
+OS call.
+
+| File | Role | Notes |
+|---|---|---|
+| `ports/pipe_directory.go` | adapter seam | `Names() []string` — the raw pipe namespace. |
+| `pipe_probe.go` | adapter — implements `EndpointProbe` | Holds the decision: match `<reader>McpBridge`, map a pipe name to a reader name, join with the configured endpoints. Unit-tested against a fake directory. |
+| `pipe_directory_windows.go` | adapter **leaf** | `//go:build windows`; reads `\\.\pipe\`. No decisions. |
+| `pipe_directory_other.go` | adapter **leaf** stub | `//go:build !windows`; returns an empty list, so every endpoint reports liveness unknown. |
+
+### 7. `server/internal/adapters/` — the remaining edges
 
 `system_clock.go` (leaf) and `stderr_log.go` (leaf).
 
-### 7. `server/internal/version/version.go`
+### 8. `server/internal/version/version.go`
 
 `const Version` — the single version source 12a's tagging scheme reads.
 
-### 8. `server/cmd/screenreader-mcp/main.go`
+### 9. `server/cmd/screenreader-mcp/main.go`
 
-Entry point **only**: parse flags (`--endpoint`, `--label`, `--capture-mode`,
-`--reader-log-level`, `--version`), hand them to wiring, run. No logic.
+Entry point **only**: parse flags and hand them to wiring. No logic.
 
-### 9. `server/internal/wiring/wiring.go`
+| Flag | Meaning |
+|---|---|
+| `--reader name=spec` | Repeatable. One configured endpoint, e.g. `nvda=pipe:nvdaMcpBridge` or `talkback=tcp:127.0.0.1:9010`. Omitted entirely, the server falls back to the NVDA bridge's default pipe. |
+| `--version` | Prints `internal/version.Version` and exits. |
+
+There is deliberately **no** `--capture-mode` and no `--reader-log-level`: both
+are `connect_reader` parameters (see deliverable 15).
+
+### 10. `server/internal/wiring/wiring.go`
 
 Composition root. In 10a it builds the transport, the client, and returns a
 handshake-capable object; 10b extends it with the MCP server and controllers.
 
-### 10. `internal/fakes/` and `internal/testsupport/`
+### 11. `internal/fakes/` and `internal/testsupport/`
 
 A fake per port and a fake `Transport` (scriptable: queued responses, injected
 errors, EOF), plus builders. Each fake carries its compile-time assertion.
 
-### 11. CI and repo changes
+### 12. CI and repo changes
 
 - Delete `mcpServer/` and drop it from the uv workspace.
 - Replace the Python `server` job with a Go one — **the job name stays
@@ -384,17 +470,17 @@ errors, EOF), plus builders. Each fake carries its compile-time assertion.
 
 ## Deliverables — 10b: the MCP surface
 
-### 12. `server/internal/domain/ports/tool_publisher.go`
+### 13. `server/internal/domain/ports/tool_publisher.go`
 
 Port — how the domain publishes and retracts the advertised tool set. Keeps the
 SDK out of the domain; implemented by the MCP adapter.
 
-### 13. `server/internal/domain/entities/tool_catalog.go`
+### 14. `server/internal/domain/entities/tool_catalog.go`
 
 Entity — pure decision table: capability set in, tool names out. This *is* the
 gate. No reader names appear in it, only capability strings.
 
-### 14. `server/internal/domain/controllers/tools/` — one controller per tool
+### 15. `server/internal/domain/controllers/tools/` — one controller per tool
 
 A `Tool` interface (`Name`, `Capability`, `InputSchema`, `Execute`) with one
 implementation per file, mirroring the bridge's one-handler-per-command
@@ -415,24 +501,44 @@ parameter object (the ports it may use, the current `ReaderSession`, the clock)
 | `get_state` | state | `getState` |
 | `get_config` | config | `getConfig` |
 | `set_config` | config | `setConfig` |
-| `status` | *(none — always present)* | *(none — server state)* |
 
-`ping`, `echo` and `bye` stay internal: `ping` is the heartbeat, `bye` is
-teardown, `echo` is a diagnostic the agent has no use for.
+The four **ungated** tools are always advertised, before and after a session
+exists, and live in the same directory:
+
+| Tool | Params | What it does |
+|---|---|---|
+| `list_readers` | — | The `ReaderListing`: configured and discovered endpoints, each with liveness where knowable. |
+| `connect_reader` | `reader`, `mode`, `log_level?` | Dials that endpoint, handshakes, publishes the gated tools. Errors if a session is already live. `reader` may be omitted when exactly one endpoint is known. |
+| `disconnect_reader` | — | Sends `bye`, retracts the gated tools. |
+| `status` | — | Connection state, reason, and the current `ReaderSession` if any. |
+
+`mode` and `log_level` are tool parameters and not CLI flags precisely because
+the wire contract fixes them at `hello` for the session's lifetime: the agent
+opening the session is the party that knows what the session is for.
+
+`ping`, `echo` and `bye` are not tools: `ping` is the heartbeat the connection
+controller sends, `bye` is what `disconnect_reader` sends, `echo` is a
+diagnostic the agent has no use for.
 
 `registry.go` is an explicit hand-written map, read top to bottom — same
 reasoning as the bridge's registry and `wiring.go`: no decorator
 auto-registration, no container.
 
-### 15. `server/internal/domain/controllers/connection.go`
+### 16. `server/internal/domain/controllers/connection.go`
 
-Controller — owns the lifecycle in "The bridge is absent at startup" above:
-dial, handshake, publish via `ToolPublisher`, heartbeat `ping` on the `Clock`,
-detect loss, retract, retry with backoff. Holds the `ConnectionState` and the
-current `ReaderSession`; `status` reads them. **The only stateful thing in the
-process**, and it is an ordinary value owned by wiring — not a package global.
+Controller — owns the lifecycle in "Connection is agent-initiated" above, driven
+entirely by the four ungated tools: `List` (endpoints joined with probe
+results), `Connect` (dial, handshake, publish via `ToolPublisher`), `Disconnect`
+(`bye`, retract), and loss detection (retract, record why). It sends the
+heartbeat `ping` on the `Clock` while a session is live. **No retry policy and
+no backoff** — a failed connect returns an error to the agent and leaves the
+state `Disconnected`.
 
-### 16. `server/internal/adapters/mcp/`
+Holds the `ConnectionState` and the current `ReaderSession`; `status` reads
+them. **The only stateful thing in the process**, and it is an ordinary value
+owned by wiring — not a package global.
+
+### 17. `server/internal/adapters/mcp/`
 
 | File | Role |
 |---|---|
@@ -443,14 +549,6 @@ process**, and it is an ordinary value owned by wiring — not a package global.
 The exact SDK call shapes are settled during implementation against the v1.x
 API; the adapter boundary exists precisely so that churn cannot reach the
 domain.
-
-### 17. Session log paths as resources
-
-`hello` returns `logPath` (the bridge's transcript) and `nvdaLogPath` (this
-session's capture of the reader's own log, [spec 0009](0009-nvda-log-capture.md)).
-Both are surfaced in `screenreader://info`, and their **contents** are served as
-resources so the agent can read a session's NVDA log without shell access. Same
-machine by construction, so this is a file read.
 
 ## Deliverables — 10c: conformance and release plumbing
 
@@ -483,13 +581,16 @@ the Go structure.
 | `wire/go/*` | generated contract binding | `go:generate` | adapters only |
 | `domain/ports/session_dialer.go` | port | — | implemented by `bridge/handshake.go` |
 | `domain/ports/{speech,braille,gesture,focus,state,config}_*.go` | ports | — | implemented by `json_lines_client.go`, used by tools |
+| `domain/ports/endpoint_probe.go` | port | — | implemented by `discovery/pipe_probe.go`, used by `connection.go` |
 | `domain/ports/clock.go`, `log.go` | ports | — | used by everything |
 | `domain/ports/tool_publisher.go` | port | — | implemented by `mcp/sdk_server.go`, used by `connection.go` |
 | `domain/entities/reader_session.go` | entity | handshake | read by tools, `status`, info resource |
 | `domain/entities/capability.go` | entity | handshake | read by `tool_catalog.go` |
 | `domain/entities/connection_state.go` | entity | `connection.go` | read by `status` |
 | `domain/entities/tool_catalog.go` | entity (pure gate) | `connection.go` | capabilities in, tool names out |
-| `domain/controllers/connection.go` | controller | wiring | dialer, publisher, clock, log, catalog |
+| `domain/entities/reader_endpoint.go` | entity | wiring / the probe | read by `connection.go`, `list_readers` |
+| `domain/entities/reader_listing.go` | entity | `connection.go` | endpoints joined with liveness |
+| `domain/controllers/connection.go` | controller | wiring | dialer, probe, publisher, clock, log, catalog, endpoints |
 | `domain/controllers/tools/*.go` | controllers (one per tool) | `registry.go` | one port each, via `ToolContext` |
 | `domain/controllers/tools/tool_context.go` | parameter object | per call | ports + `ReaderSession` + clock |
 | `domain/controllers/tools/registry.go` | explicit map | wiring | the tool controllers |
@@ -501,6 +602,9 @@ the Go structure.
 | `adapters/mcp/sdk_server.go` | adapter (`ToolPublisher`) | wiring | go-sdk, registry |
 | `adapters/mcp/tool_binding.go` | adapter | `sdk_server.go` | domain `Tool` |
 | `adapters/mcp/info_resource.go` | adapter | wiring | `ReaderSession` |
+| `adapters/discovery/ports/pipe_directory.go` | adapter seam | — | implemented by the leaves |
+| `adapters/discovery/pipe_probe.go` | adapter (`EndpointProbe`, all decisions) | wiring | `PipeDirectory`, naming convention |
+| `adapters/discovery/pipe_directory_*.go` | adapter leaves | `pipe_probe.go` | the OS |
 | `adapters/system_clock.go`, `stderr_log.go` | adapter leaves | wiring | the OS |
 | `internal/version/version.go` | constant | — | `--version`, release workflow |
 | `internal/wiring/wiring.go` | composition root | `main.go` | everything above |
@@ -512,30 +616,47 @@ the Go structure.
    compiles out cleanly on Linux.
 2. The binary is statically linked (`CGO_ENABLED=0`) and runs with no runtime
    installed.
-3. Starting the server with **no bridge listening** yields a working MCP session
-   advertising `status` and nothing else; `status` reports "no bridge".
-4. Starting the bridge afterwards causes the gated tools to appear without
-   restarting the server, and `screenreader://info` reports the reader's name,
-   version and capabilities.
-5. Stopping the bridge retracts the gated tools; the server keeps running and
-   `status` says so; restarting the bridge republishes them.
-6. A bridge announcing an unsupported `protocolVersion` produces an
-   `Incompatible` state naming both versions, and no crash and no exit.
-7. A tool whose capability is absent is **not advertised**, and calling it
-   directly (a stale list) returns a structured capability error.
-8. No package-level mutable state anywhere in `server/`, enforced by review.
-9. Nothing under `domain/` imports `wire/go` or the MCP SDK, enforced by review
-   and by an import-boundary test.
-10. `wire/go` regenerates from `schema.json` with no diff.
-11. The conformance job drives the real Python bridge over both a named pipe and
+3. A freshly started server advertises exactly the four ungated tools, has
+   **not** dialed anything, and `status` reports `Disconnected`.
+4. With the bridge listening, `list_readers` reports it as live; with the bridge
+   stopped, the same endpoint reports not listening. A conforming pipe that is
+   not in the configuration is reported as discovered.
+5. `connect_reader` publishes the gated tools without restarting the server, and
+   `screenreader://info` reports the reader's name, version and capabilities.
+   The `mode` passed to `connect_reader` is the mode `hello` established.
+6. `disconnect_reader`, and an observed connection loss, both retract the gated
+   tools; the server keeps running and `status` says why. A later
+   `connect_reader` republishes them.
+7. `connect_reader` while connected returns an error and leaves the live session
+   untouched.
+8. A bridge announcing an unsupported `protocolVersion` fails `connect_reader`
+   with an error naming both versions, leaves state `Incompatible`, and neither
+   crashes nor exits.
+9. No connection attempt is ever made that the agent did not ask for.
+10. A tool whose capability is absent is **not advertised**, and calling it
+    directly (a stale list) returns a structured capability error.
+11. No package-level mutable state anywhere in `server/`, enforced by review.
+12. Nothing under `domain/` imports `wire/go` or the MCP SDK, enforced by review
+    and by an import-boundary test.
+13. `wire/go` regenerates from `schema.json` with no diff.
+14. The conformance job drives the real Python bridge over both a named pipe and
     loopback TCP.
-12. `--version` prints the constant that the `server-v*` tag is checked against.
-13. Nothing is written to stdout but MCP frames.
+15. `--version` prints the constant that the `server-v*` tag is checked against.
+16. Nothing is written to stdout but MCP frames.
 
 ## Out of scope
 
 - **Concurrent sessions / cross-reader tools** — deferred; the no-global-state
   constraint keeps them a map plus a lookup.
+- **Serving the session logs over the wire** — `hello` returns `logPath` and
+  `nvdaLogPath`, and `screenreader://info` reports both **paths**, but their
+  *contents* are not exposed as MCP resources in v1. Agreed 2026-07-22 that
+  reading a session's transcript and NVDA log through the agent is worth having
+  and needs its own conversation first: what is exposed (whole file, tail, since
+  an index), how it interacts with spec 0009's per-session capture, and whether
+  it stays sound once a bridge is not on the same machine as the server.
+- **Automatic connection or reconnection** — rejected, not deferred: the agent
+  owns the connection. See "Connection is agent-initiated".
 - **Multi-version protocol negotiation** — the hub-versus-lockstep decision is
   deliberately left open; only its cost is kept low.
 - **Remote TCP** — deferred on the bridge side behind its own security spec, so
@@ -550,7 +671,7 @@ the Go structure.
 
 10a, 10b and 10c merged; CI green including the conformance job; ROADMAP entry
 10 marked Done with its PR numbers; AGENTS.md describing the Go server; spec
-0005 amended as below.
+0005 amended as below, and the wire prose amended with the pipe naming convention.
 
 ## Amendments to spec 0005
 
@@ -566,6 +687,24 @@ same PR that acts on it, per invariant 6):
    now, at session D. Session F (entry 12b) keeps the remaining distribution
    questions — `.mcpb`, umbrella installer, channels — but the language question
    is closed and PyInstaller is off the table.
+
+## Amendment to the wire protocol prose
+
+[`specs/wire/v1/protocol.md`](wire/v1/protocol.md) §1 gains a **pipe naming
+convention**, so a server can attribute a listening pipe to a reader without
+connecting to it:
+
+> A bridge offering a named pipe SHOULD name it `<reader>McpBridge`, where
+> `<reader>` is the same value the bridge sends as `hello`'s `reader.name`. The
+> convention exists so a server can enumerate the pipe namespace and report
+> which bridges are listening without dialing them; it is discovery only, and
+> `hello` remains the sole authority on which reader actually answered.
+
+This is prose only — `schema.json` is untouched, no field changes, no version
+bump. The NVDA bridge already satisfies it
+(`\\.\pipe\nvdaMcpBridge`, `reader.name = "nvda"`), so the amendment describes
+existing behaviour rather than requiring a bridge change. It lands in 10b, the
+PR that implements the scan.
 
 Everything else in 0005 stands unchanged, including the four chassis principles,
 which this spec implements rather than revises.
