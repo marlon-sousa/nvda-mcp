@@ -241,28 +241,43 @@ MCP host.
 agent to disconnect first, rather than a silent switch that would pull the
 session out from under a multi-step task.
 
-### Discovery: configured endpoints, plus a live pipe scan
+### The endpoint set is deterministic; the scan reports liveness only
 
-`list_readers` answers "what do I have at my disposal" from two sources:
+`list_readers` answers "what do I have at my disposal" from **configuration
+alone**. Every entry it can ever return is known before the process starts:
+either an endpoint given with `--reader`, or — when none is given — the built-in
+default, the NVDA bridge's pipe. Nothing is invented at runtime.
 
-1. **Configuration** — the endpoint list from the composition root, each with a
-   name, a transport and an address.
-2. **Liveness, where it is free.** On Windows the named-pipe namespace can be
-   enumerated by reading the `\\.\pipe\` directory, so the server can report
-   which bridges are *actually listening right now* without dialing them —
-   crucial, because the bridge accepts one session at a time and a probe that
-   connects would occupy that slot. A TCP endpoint cannot be tested without
-   connecting, so it is reported as configured, liveness unknown.
+The pipe scan serves exactly one purpose: saying whether a **known** endpoint is
+live. On Windows the named-pipe namespace can be enumerated by reading the
+`\\.\pipe\` directory, so the server matches each configured pipe name against
+that listing and reports listening or not listening — without dialing, which
+matters because the bridge accepts one session at a time and a connecting probe
+would occupy that slot. A TCP endpoint cannot be tested without connecting, so
+it reports liveness unknown.
 
-This needs a published **pipe naming convention** so the scan can attribute a
-pipe to a reader: `<reader>McpBridge`, which the NVDA bridge's existing
-`\\.\pipe\nvdaMcpBridge` already satisfies (a future JAWS bridge would use
-`jawsMcpBridge`). The convention is added to the wire contract's prose — see
+**A pipe that is listening but not configured is not reported and cannot be
+connected to** (agreed 2026-07-22, reversing the draft). Inferring an endpoint
+from a name found in the namespace would make the server's reader set depend on
+what happens to be running, and the name itself on a string any same-user
+process can choose. The determinism matters on its own, and it matters more
+given where this is heading: **server and bridge are expected to exchange a
+shared secret** in a later entry, at which point a bridge is something you
+*provision*, not something you stumble upon. Building a zero-configuration
+discovery path now would be building the exact thing that security model has to
+take away.
+
+The zero-configuration install still works, because the default endpoint is a
+constant in the server, not an inference: install the add-on, run the server
+with no arguments, and `list_readers` reports the NVDA bridge and whether it is
+listening.
+
+The published **pipe naming convention** — `<reader>McpBridge`, which the NVDA
+bridge's `\\.\pipe\nvdaMcpBridge` already satisfies — is therefore not a
+discovery mechanism but a predictability one: it is what lets a server ship a
+sane default for a reader and lets a user guess the name when writing a
+`--reader` flag by hand. It is added to the wire contract's prose; see
 "Amendment to the wire protocol prose".
-
-A pipe that matches the convention but is not in the configuration is reported
-as **discovered**, so a freshly installed bridge is usable without editing the
-host config first.
 
 ### stdout belongs to JSON-RPC
 
@@ -440,7 +455,7 @@ reviewer could call speculative given the single implementation.
 | `reader_session.go` | entity — what `hello` established | Reader name/version, capability set, mode, synth, `logPath`, `nvdaLogPath`, bridge protocol version. Immutable value. |
 | `capability.go` | entity — the capability vocabulary | Typed constants for the six groups, plus `Set` with `Has`. Unknown strings are retained and ignored, per protocol.md §4. |
 | `connection_state.go` | entity — the lifecycle state machine | `Disconnected` / `Connecting` / `Connected` / `Incompatible`, with the reason string `status` reports. No `Retrying`: the agent owns connection. |
-| `reader_endpoint.go` | entity — one configured or discovered endpoint | Name, transport kind, address, and its origin (`configured` / `discovered`). Immutable value built by wiring or the scanner. |
+| `reader_endpoint.go` | entity — one configured endpoint | Name, transport kind, address, and the reader name expected there. Immutable value built by wiring, never by the scanner. |
 | `reader_listing.go` | entity — what `list_readers` answers | Endpoints joined with liveness: listening / not listening / unknown (TCP). Pure; the join lives here, not in the tool. |
 
 ### 4. `server/adapters/ports/transport.go` — the adapter seam
@@ -471,7 +486,7 @@ OS call.
 | File | Role | Notes |
 |---|---|---|
 | `ports/pipe_directory.go` | adapter seam | `Names() []string` — the raw pipe namespace. |
-| `pipe_probe.go` | adapter — implements `EndpointProbe` | Holds the decision: match `<reader>McpBridge`, map a pipe name to a reader name, join with the configured endpoints. Unit-tested against a fake directory. |
+| `pipe_probe.go` | adapter — implements `EndpointProbe` | Holds the decision: match each **configured** pipe name against the namespace listing and report listening / not listening. Never invents an endpoint from a name it finds. Unit-tested against a fake directory. |
 | `pipe_directory_windows.go` | adapter **leaf** | `//go:build windows`; reads `\\.\pipe\`. No decisions. |
 | `pipe_directory_other.go` | adapter **leaf** stub | `//go:build !windows`; returns an empty list, so every endpoint reports liveness unknown. |
 
@@ -571,7 +586,7 @@ exists, and live in the same directory:
 
 | Tool | Params | What it does |
 |---|---|---|
-| `list_readers` | — | The `ReaderListing`: configured and discovered endpoints, each with liveness where knowable. |
+| `list_readers` | — | The `ReaderListing`: the configured endpoints (or the built-in default), each with liveness where knowable. |
 | `connect_reader` | `reader`, `mode`, `log_level?` | Dials that endpoint, handshakes, publishes the gated tools. Errors if a session is already live. `reader` may be omitted when exactly one endpoint is known. |
 | `disconnect_reader` | — | Sends `bye`, retracts the gated tools. |
 | `status` | — | Connection state, reason, and the current `ReaderSession` if any. When a session is live it **also makes a real `ping` round trip** and reports the outcome, so the answer is proof rather than possibly-stale local state. |
@@ -689,7 +704,7 @@ the Go structure.
 | `adapters/mcp/tool_binding.go` | adapter | `sdk_server.go` | domain `Tool` |
 | `adapters/mcp/info_resource.go` | adapter | wiring | `ReaderSession` |
 | `adapters/discovery/ports/pipe_directory.go` | adapter seam | — | implemented by the leaves |
-| `adapters/discovery/pipe_probe.go` | adapter (`EndpointProbe`, all decisions) | wiring | `PipeDirectory`, naming convention |
+| `adapters/discovery/pipe_probe.go` | adapter (`EndpointProbe`, all decisions) | wiring | `PipeDirectory`, the configured endpoints |
 | `adapters/discovery/pipe_directory_*.go` | adapter leaves | `pipe_probe.go` | the OS |
 | `adapters/system_clock.go`, `stderr_log.go` | adapter leaves | wiring | the OS |
 | `version/version.go` | constant | — | `--version`, release workflow |
@@ -705,8 +720,8 @@ the Go structure.
 3. A freshly started server advertises exactly the four ungated tools, has
    **not** dialed anything, and `status` reports `Disconnected`.
 4. With the bridge listening, `list_readers` reports it as live; with the bridge
-   stopped, the same endpoint reports not listening. A conforming pipe that is
-   not in the configuration is reported as discovered.
+   stopped, the same endpoint reports not listening. A listening pipe that is not
+   in the configuration is **not** reported and cannot be connected to.
 5. `connect_reader` publishes the gated tools without restarting the server, and
    `screenreader://info` reports the reader's name, version and capabilities.
    The `mode` passed to `connect_reader` is the mode `hello` established.
@@ -777,14 +792,15 @@ same PR that acts on it, per invariant 6):
 ## Amendment to the wire protocol prose
 
 [`specs/wire/v1/protocol.md`](wire/v1/protocol.md) §1 gains a **pipe naming
-convention**, so a server can attribute a listening pipe to a reader without
-connecting to it:
+convention**, so a reader's endpoint is predictable rather than arbitrary:
 
 > A bridge offering a named pipe SHOULD name it `<reader>McpBridge`, where
 > `<reader>` is the same value the bridge sends as `hello`'s `reader.name`. The
-> convention exists so a server can enumerate the pipe namespace and report
-> which bridges are listening without dialing them; it is discovery only, and
-> `hello` remains the sole authority on which reader actually answered.
+> convention exists so that a server can ship a sane default endpoint for a
+> reader, and a user can predict the name when configuring one by hand. It is a
+> naming rule only: it confers no trust, a server never infers an endpoint from
+> the namespace, and `hello` remains the sole authority on which reader actually
+> answered.
 
 This is prose only — `schema.json` is untouched, no field changes, no version
 bump. The NVDA bridge already satisfies it
