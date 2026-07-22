@@ -17,13 +17,13 @@ class FakeEventBus(EventBus):
 	"""In-memory event bus for tests. Records every emit in ``events``."""
 
 	def __init__(self) -> None:
-		self._next_token = 1
+		self._next_token = 0
 		self._handlers: dict[BridgeEventType, list[EventHandler]] = defaultdict(list)
 		self.events: list[BridgeEvent] = []
 
 	def subscribe(self, event_type: BridgeEventType, handler: EventHandler) -> SubscriptionToken:
-		token = self._next_token
 		self._next_token += 1
+		token = str(self._next_token)
 		self._handlers[event_type].append(handler)
 		return token
 

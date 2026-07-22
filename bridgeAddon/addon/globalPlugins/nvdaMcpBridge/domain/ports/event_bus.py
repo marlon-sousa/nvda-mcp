@@ -19,7 +19,7 @@ from ..entities.bridge_events import BridgeEvent, BridgeEventType
 EventHandler = Callable[[BridgeEvent], None]
 
 #: Opaque token returned by subscribe(), consumed by unsubscribe().
-SubscriptionToken = int
+SubscriptionToken = str
 
 
 class EventBus(ABC):
