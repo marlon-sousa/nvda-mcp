@@ -623,9 +623,19 @@ exists, and live in the same directory:
 | Tool | Params | What it does |
 |---|---|---|
 | `list_readers` | — | The `ReaderListing`: every known reader with its endpoints and their liveness where knowable. |
-| `connect_reader` | `reader`, `mode`, `log_level?` | Tries that reader's endpoints **in declared order**, handshakes, publishes the gated tools, and reports which endpoint answered. Errors if a session is already live. |
+| `connect_reader` | `reader` (**required**), `mode`, `log_level?` | Tries that reader's endpoints **in declared order**, handshakes, publishes the gated tools, and reports which endpoint answered. Errors if a session is already live; an unknown `reader` errors with the known names listed. |
 | `disconnect_reader` | — | Sends `bye`, retracts the gated tools. |
 | `status` | — | Connection state, reason, and the current `ReaderSession` if any. When a session is live it **also makes a real `ping` round trip** and reports the outcome, so the answer is proof rather than possibly-stale local state. |
+
+**`reader` is required, never defaulted** (agreed 2026-07-22). Defaulting to the
+single *live* reader would make one call mean different things minute to minute;
+defaulting to the single *known* reader is deterministic only until the JAWS
+bridge ships, at which point every agent habit built on the omitted argument
+starts failing with an ambiguity error caused by a release the agent knows
+nothing about. The convenience saved at most one `list_readers` call on a
+once-per-session tool, and the required argument makes every transcript
+self-describing. The unknown-reader error lists the known names, so an agent
+that guesses wrong self-corrects in the same turn.
 
 `mode` and `log_level` are tool parameters and not CLI flags precisely because
 the wire contract fixes them at `hello` for the session's lifetime: the agent
