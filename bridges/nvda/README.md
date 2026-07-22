@@ -24,9 +24,11 @@ Download the [NVDA MCP Bridge 0.1.0 addon](https://github.com/marlon-sousa/scree
 
 The add-on does not talk to your AI agent directly. It listens on a local endpoint and speaks a small JSON-lines protocol. The other half — the **nvda-mcp server** — is a separate program that your agent's MCP client launches. The server connects to this add-on and re-exposes NVDA to the agent as MCP tools.
 
-```
-AI agent  ──MCP/stdio──>  nvda-mcp server  ──JSON lines──>  this add-on  ──>  NVDA
-```
+The chain, top to bottom — each link talks only to the next:
+
+1. Your AI agent speaks MCP over stdio to the server.
+2. The `nvda-mcp` server speaks JSON lines over a local endpoint to this add-on.
+3. This add-on drives NVDA itself.
 
 The two halves share one versioned wire contract. What has to match is the **protocol version**, not the version numbers of the two programs: the `hello` handshake compares protocol versions and rejects a mismatch with a clear error rather than misbehaving. So any server build that speaks the same protocol version as this add-on will work with it, whatever its own version number happens to be. Each release states the protocol version it speaks.
 
