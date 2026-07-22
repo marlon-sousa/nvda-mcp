@@ -67,36 +67,39 @@ class SimpleEventBus(EventBus):
 					pass
 
 	def emit(self, event: BridgeEvent) -> None:
+		# Snapshot (token, entry) pairs under the lock so the iteration
+		# outside doesn't touch shared data at all. Handlers are called on
+		# the emitter's thread — subscribers that care about thread context
+		# are responsible for marshalling themselves.
+		pairs: list[tuple[SubscriptionToken, _Entry]] = []
 		with self._lock:
-			tokens = list(self._by_type.get(event.type, ()))
-		# Call handlers outside the lock so a handler that emits back (or
-		# takes a long time) doesn't block other threads from subscribing.
-		for token in tokens:
-			with self._lock:
+			for token in self._by_type.get(event.type, ()):
 				entry = self._entries.get(token)
-			if entry is None:
-				self._remove_token(event.type, token)
-				continue
+				if entry is not None:
+					pairs.append((token, entry))
+
+		dead: list[SubscriptionToken] = []
+		for token, entry in pairs:
 			fn = _resolve(entry.weak_handler)
 			if fn is None:
-				with self._lock:
-					self._entries.pop(token, None)
-				self._remove_token(event.type, token)
+				dead.append(token)
 				continue
 			try:
 				fn(event)
 			except Exception:
 				pass
 
-	def _remove_token(self, event_type: BridgeEventType, token: SubscriptionToken) -> None:
-		"""Remove *token* from the per-type index. Safe to call when already absent."""
-		with self._lock:
-			by_type = self._by_type.get(event_type)
-			if by_type is not None:
-				try:
-					by_type.remove(token)
-				except ValueError:
-					pass
+		if dead:
+			with self._lock:
+				for token in dead:
+					self._entries.pop(token, None)
+				by_type = self._by_type.get(event.type)
+				if by_type is not None:
+					for token in dead:
+						try:
+							by_type.remove(token)
+						except ValueError:
+							pass
 
 
 #: Internal record for one subscription.
