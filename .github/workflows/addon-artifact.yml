@@ -1,0 +1,92 @@
+name: Addon artifact
+
+# Builds the .nvda-addon for a PR and uploads it, so a reviewer (or the
+# live-NVDA checklist) can install the exact build under review.
+#
+# PATH-FILTERED ON PURPOSE, and deliberately NOT a required status check.
+# `shared/**` is in the filter because sync_shared.py copies the wire module
+# into the addon, so a shared change does change the built addon.
+#
+# Do NOT add this job to branch protection. ci.yml's header explains why:
+# required checks are matched by literal job name, so a path-filtered required
+# job leaves every PR that misses the filter parked on "Expected - waiting for
+# status to be reported". The merge gates in ci.yml stay unconditional; this
+# workflow is the artifact half of that split and is free to skip.
+#
+# The companion comment-pr-artifact.yml posts the download link on the PR. It
+# keys off this workflow's NAME ("Addon artifact") -- keep them in sync.
+
+on:
+  pull_request:
+    paths:
+      - 'shared/**'
+      - 'bridges/nvda/**'
+      - '.github/workflows/addon-artifact.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build .nvda-addon
+    runs-on: ubuntu-latest
+    env:
+      ARTIFACT_RETENTION_DAYS: 7
+    steps:
+      - uses: actions/checkout@v4
+
+      # scons drives msgfmt through the gettext tool. The addon ships no .po
+      # files today, so nothing is compiled, but the tool is loaded either way.
+      - name: Install system dependencies
+        run: sudo apt-get install -y gettext
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install build dependencies
+        run: pip install scons markdown
+
+      - name: Sync shared wire module into addon
+        working-directory: bridges/nvda
+        run: python sync_shared.py
+
+      - name: Build addon
+        id: build
+        working-directory: bridges/nvda
+        run: |
+          rm -f ./*.nvda-addon || true
+          scons
+          builtAddon="$(ls -1 ./*.nvda-addon | head -n 1 | xargs -n1 basename)"
+          # Stamp the build date into the uploaded name so builds are easy to
+          # tell apart on the PR. Release builds keep the clean name.
+          datedAddon="${builtAddon%.nvda-addon}_$(date -u +%Y%m%d).nvda-addon"
+          if [ "$builtAddon" != "$datedAddon" ]; then
+            mv "$builtAddon" "$datedAddon"
+          fi
+          echo "addon_file=$datedAddon" >> "$GITHUB_OUTPUT"
+          echo "Packaged $datedAddon"
+
+      # README.md is generated from README.tpl.md but IS versioned (it is what
+      # GitHub renders for the add-on directory and what the store links to).
+      # scons has just regenerated it, so any diff means someone edited the
+      # template without committing the render.
+      - name: README.md is up to date
+        working-directory: bridges/nvda
+        run: |
+          if ! git diff --exit-code -- README.md; then
+            echo "::error file=bridges/nvda/README.md::README.md is stale."
+            echo "Run 'scons' in bridges/nvda and commit the regenerated README.md."
+            exit 1
+          fi
+
+      # The artifact NAME ends in .nvda-addon on purpose: comment-pr-artifact.yml
+      # finds it by that suffix.
+      - name: Upload packaged addon
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.build.outputs.addon_file }}
+          retention-days: ${{ env.ARTIFACT_RETENTION_DAYS }}
+          path: bridges/nvda/*.nvda-addon
+          if-no-files-found: error
