@@ -15,7 +15,7 @@ COPYING.txt alongside this file.
 
 SPDX-License-Identifier: GPL-2.0-or-later
 
-Note on components: the `bridgeAddon/` add-on additionally incorporates code
+Note on components: the `bridges/nvda/` add-on additionally incorporates code
 adapted from NVDA's own GPL-2 system-test suite (the spy synth driver) and loads
 into NVDA (GPL-2), so it is inherently GPL. `shared/` and `mcpServer/` are
 original work licensed GPL-2.0-or-later as above; as the copyright holder, the

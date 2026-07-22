@@ -6,7 +6,7 @@ the machine half, generated from the reference Python implementation
 (`shared/nvda_mcp_wire/protocol.py`) so shapes and prose cannot disagree.
 
 A bridge author in any language implements this document plus the schema. The
-NVDA bridge (`bridgeAddon/`) is the reference implementation; JAWS and TalkBack
+NVDA bridge (`bridges/nvda/`) is the reference implementation; JAWS and TalkBack
 bridges are anticipated (see
 [spec 0005](../../0005-multi-reader-direction.md)) and would speak this same
 contract with reader-specific values.
