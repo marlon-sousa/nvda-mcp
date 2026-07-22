@@ -1,0 +1,152 @@
+name: Release NVDA bridge
+
+# Publishes the NVDA add-on as a DRAFT GitHub release.
+#
+# TAGGING (monorepo): every component is tagged with its own prefix, so one tag
+# selects one component and one asset set. Tag "nvda-bridge-v0.2.0" releases
+# nvdaMcpBridge-0.2.0.nvda-addon (this workflow); tag "server-v0.3.1" will
+# release the server distribution (that workflow is not written yet).
+#
+# A dash, not a slash: a slash in a tag is URL-encoded as %2F in the release
+# asset download URL, and that URL is what the add-on store entry links to.
+#
+# VERSION LIVES ONLY IN buildVars.addon_version. The tag does not introduce a
+# second copy -- it is an assertion, and step "buildVars version must match the
+# tag" rejects the release if the two disagree. Release notes likewise come from
+# buildVars.addon_changelog, not from the tag annotation.
+#
+# Published as a DRAFT on purpose: once the store entry points at a download
+# URL, replacing a bad asset is painful. Review the draft, then publish.
+#
+# Note on "Latest": GitHub's latest-release pointer is singular and repo-wide,
+# so a server release would take the badge from the add-on. Never link
+# /releases/latest/download/... -- README.tpl.md builds an explicit versioned
+# URL for exactly this reason.
+
+on:
+  push:
+    tags:
+      - 'nvda-bridge-v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: release nvda bridge
+    runs-on: ubuntu-latest
+    steps:
+      # Full history: the tag-is-on-main check needs ancestry, which the
+      # default depth-1 checkout does not provide.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # The `tags:` filter above is a glob (no anchoring, `.` is literal), so it
+      # would happily accept nvda-bridge-v1.2 or a stray suffix. This is the
+      # real check.
+      - name: Validate tag shape
+        id: tag
+        run: |
+          TAG="$GITHUB_REF_NAME"
+          if ! printf '%s' "$TAG" | grep -Eq '^nvda-bridge-v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Tag '$TAG' is not of the form nvda-bridge-vMAJOR.MINOR.PATCH"
+            exit 1
+          fi
+          echo "version=${TAG#nvda-bridge-v}" >> "$GITHUB_OUTPUT"
+
+      # Stops a tag pushed from a feature branch publishing unmerged code.
+      - name: Tag must be on main
+        run: |
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main; then
+            echo "::error::Tag '$GITHUB_REF_NAME' is not on main. Release only from merged commits."
+            exit 1
+          fi
+
+      - name: Install system dependencies
+        run: sudo apt-get install -y gettext
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install build dependencies
+        run: pip install scons markdown pytest
+
+      # buildVars imports only site_scons typings/utils -- no SCons, no deps.
+      - name: buildVars version must match the tag
+        working-directory: bridges/nvda
+        run: |
+          BUILD_VARS_VERSION="$(python -c "import buildVars; print(buildVars.addon_info['addon_version'])")"
+          TAG_VERSION="${{ steps.tag.outputs.version }}"
+          if [ "$BUILD_VARS_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Tag says $TAG_VERSION but buildVars.addon_version is $BUILD_VARS_VERSION."
+            echo "buildVars is the source of truth; bump it and retag."
+            exit 1
+          fi
+          echo "Releasing version $TAG_VERSION"
+
+      - name: Sync shared wire module into addon
+        working-directory: bridges/nvda
+        run: python sync_shared.py
+
+      - name: Tests (headless bridge core)
+        working-directory: bridges/nvda
+        run: python -m pytest -q
+
+      - name: Build addon
+        working-directory: bridges/nvda
+        run: |
+          rm -f ./*.nvda-addon || true
+          scons
+
+      - name: README.md is up to date
+        working-directory: bridges/nvda
+        run: |
+          if ! git diff --exit-code -- README.md; then
+            echo "::error file=bridges/nvda/README.md::README.md is stale; regenerate with scons and commit it."
+            exit 1
+          fi
+
+      # Notes come from buildVars.addon_changelog (the same text the add-on
+      # store shows as "what's new"), plus the wire protocol version -- which is
+      # what actually determines bridge/server compatibility, since hello
+      # compares PROTOCOL_VERSION and never the component versions.
+      - name: Compose release notes
+        id: notes
+        run: |
+          VERSION="${{ steps.tag.outputs.version }}"
+          PROTOCOL="$(python -c "import re, pathlib; print(re.search(r'^PROTOCOL_VERSION: Final = (\d+)', pathlib.Path('shared/nvda_mcp_wire/protocol.py').read_text(encoding='utf-8'), re.M).group(1))")"
+          CHANGELOG="$(cd bridges/nvda && python -c "import buildVars; print(buildVars.addon_info['addon_changelog'])")"
+          NOTES="$RUNNER_TEMP/notes.md"
+          {
+            printf '%s\n\n' "$CHANGELOG"
+            printf -- '---\n\n'
+            printf 'Speaks **wire protocol version %s**. Pair this add-on with any `nvda-mcp` server build that speaks the same protocol version — the component version numbers do not need to match.\n' "$PROTOCOL"
+          } > "$NOTES"
+          echo "path=$NOTES" >> "$GITHUB_OUTPUT"
+          echo "Release notes:"; cat "$NOTES"
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.tag.outputs.version }}"
+          ASSET="bridges/nvda/nvdaMcpBridge-${VERSION}.nvda-addon"
+          if [ ! -f "$ASSET" ]; then
+            echo "::error::Expected asset $ASSET was not produced by the build."
+            ls -l bridges/nvda/*.nvda-addon || true
+            exit 1
+          fi
+          gh release create "$GITHUB_REF_NAME" "$ASSET" \
+            --draft \
+            --verify-tag \
+            --title "NVDA MCP Bridge $VERSION" \
+            --notes-file "${{ steps.notes.outputs.path }}"
+          echo "Draft release created. Review it, then publish to make the download URL live."
+
+      # Add-on store submission is intentionally NOT automated. NV Access
+      # rejects submissions created through the gh CLI / freeform issue bodies;
+      # the registerAddon issue form must be filled in a browser. Use the
+      # `submit-nvda-addon` skill after publishing the draft.

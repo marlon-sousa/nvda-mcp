@@ -1,4 +1,4 @@
-# ${addon_summary} ${addon_version}
+# NVDA MCP Bridge 0.1.0
 
 An NVDA add-on that lets an AI agent **drive NVDA**: send keyboard gestures, read back what NVDA speaks and brailles, make NVDA announce something, and follow along with its log.
 
@@ -12,13 +12,13 @@ The first use case is **functional testing of NVDA add-ons** — replacing the m
 * named pipe or loopback TCP, chosen from a dialog in NVDA's Tools menu
 * a panic gesture that stops everything and gives you your speech back
 
-- Minimum NVDA version: ${addon_minimumNVDAVersion}
-- Last tested NVDA version: ${addon_lastTestedNVDAVersion}
-- Source and issues: ${addon_url}
+- Minimum NVDA version: 2026.1.0
+- Last tested NVDA version: 2026.1.0
+- Source and issues: https://github.com/marlon-sousa/screen-readers-mcp
 
 ## Download
 
-Download the [${addon_summary} ${addon_version} addon](${addon_url}/releases/download/nvda-bridge-v${addon_version}/nvdaMcpBridge-${addon_version}.nvda-addon)
+Download the [NVDA MCP Bridge 0.1.0 addon](https://github.com/marlon-sousa/screen-readers-mcp/releases/download/nvda-bridge-v0.1.0/nvdaMcpBridge-0.1.0.nvda-addon)
 
 ## This add-on is only half of the system
 
@@ -171,8 +171,8 @@ Remote (non-loopback) TCP is defined in the protocol but is deliberately not rea
 
 ## Contributing and translating
 
-If you want to contribute or translate this add-on, please access the [project repository](${addon_url}) and follow the instructions there.
+If you want to contribute or translate this add-on, please access the [project repository](https://github.com/marlon-sousa/screen-readers-mcp) and follow the instructions there.
 
 ## License
 
-${addon_license}. See COPYING.txt.
+GNU General Public License version 2 or later. See COPYING.txt.
