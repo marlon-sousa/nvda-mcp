@@ -12,6 +12,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -69,13 +70,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 10a stops here: the module, the wire binding, the endpoint config and
-	// the bridge client are in place and proven headlessly, but there is no
-	// MCP surface yet -- that is 10b. Reported on stderr and exiting non-zero,
-	// because an MCP host launching this today would otherwise sit waiting for
-	// a server that is never going to speak.
-	server.Log.Errorf(
-		"no MCP surface yet: 10a delivers the bridge client only (spec 0013). "+
-			"%d reader(s) configured.", len(server.Endpoints.Readers()))
-	os.Exit(1)
+	// Serve until the host closes stdin. A BRIDGE problem never ends this
+	// process (spec 0013): a reader that died is something the agent is told
+	// about and may reconnect to, not something that takes the MCP host's
+	// server down with it.
+	if err := server.Run(context.Background()); err != nil {
+		fmt.Fprintf(os.Stderr, "screenreader-mcp: %v\n", err)
+		os.Exit(1)
+	}
 }
