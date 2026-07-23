@@ -59,6 +59,16 @@ type FakeBridge struct {
 	handlers map[wire.Command]func(params json.RawMessage) (any, error)
 	received []wire.Command
 	byeSeen  bool
+	conn     net.Conn
+}
+
+// EveryWireCapability is the six groups protocol.md §4 defines, for the tests
+// whose subject is not the gate.
+func EveryWireCapability() []wire.Capability {
+	return []wire.Capability{
+		wire.CapabilitySpeech, wire.CapabilityBraille, wire.CapabilityGestures,
+		wire.CapabilityFocus, wire.CapabilityState, wire.CapabilityConfig,
+	}
 }
 
 // NewFakeBridge builds a bridge that answers the lifecycle commands, plus
@@ -131,10 +141,29 @@ func (b *FakeBridge) Connect() adapterports.Transport {
 // between tiers is the bytes' route, never the peer's behaviour.
 func (b *FakeBridge) Serve(conn net.Conn) { b.serve(conn) }
 
+// DropConnection closes the connection underneath the session, without a `bye`
+// and without warning.
+//
+// This is what a CRASHED reader looks like from the server's side, and it is the
+// only way to produce that scenario honestly: a bridge that died does not say
+// goodbye, so the server has to discover it by speaking into a socket that is no
+// longer there. Safe to call from inside a handler.
+func (b *FakeBridge) DropConnection() {
+	b.mu.Lock()
+	conn := b.conn
+	b.mu.Unlock()
+	if conn != nil {
+		_ = conn.Close()
+	}
+}
+
 // serve is the bridge's session loop: one JSON object per line, one response
 // per request, in order.
 func (b *FakeBridge) serve(conn net.Conn) {
 	defer conn.Close()
+	b.mu.Lock()
+	b.conn = conn
+	b.mu.Unlock()
 	lines := bufio.NewScanner(conn)
 	for lines.Scan() {
 		var request wire.Request

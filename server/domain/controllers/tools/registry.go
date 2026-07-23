@@ -35,6 +35,29 @@ func BuildRegistry() *Registry {
 		&ConnectReader{},
 		&DisconnectReader{},
 		&Status{},
+
+		// Gated on `speech`.
+		&GetSpeech{},
+		&GetLastSpeech{},
+		&GetNextSpeechIndex{},
+		&WaitForSpeech{},
+		&WaitForSpeechToFinish{},
+
+		// Gated on `braille`.
+		&GetBraille{},
+
+		// Gated on `gestures`.
+		&PressGesture{},
+
+		// Gated on `focus`.
+		&GetFocusInfo{},
+
+		// Gated on `state`.
+		&GetState{},
+
+		// Gated on `config`.
+		&GetConfig{},
+		&SetConfig{},
 	)
 }
 
