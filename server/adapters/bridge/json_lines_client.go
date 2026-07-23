@@ -61,10 +61,14 @@ const contractWaitDefault = 5 * time.Second
 const waitSlack = 5 * time.Second
 
 // ErrConnectionLost is the connection ending underneath a call: EOF, a reset, or
-// a close. A sentinel because the caller's response is the same whatever the
-// cause -- retract the tools, record why, and let the agent connect again when
-// it chooses.
-var ErrConnectionLost = errors.New("bridge connection lost")
+// a close.
+//
+// An ALIAS of the domain's sentinel, not a second one (spec 0013's 10b delivery
+// amendment 2): the party that must recognise a loss is the connection
+// controller, which retracts the gated tools and records why, and the domain
+// cannot import this package. Declaring it here and re-declaring it there would
+// give the two halves of one event two identities.
+var ErrConnectionLost = ports.ErrConnectionLost
 
 // BridgeError is the bridge answering a command with an error.
 //

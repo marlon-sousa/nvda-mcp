@@ -838,6 +838,56 @@ rule, "if the layout changes while coding, the amendment rides in the PR").
    `--capture-mode` and no `--reader-log-level`, for the reason the flag table
    gives.
 
+## Delivery amendments — 10b
+
+The layout above is the reviewed one; these are the changes delivery forced,
+each with its one-line why, recorded in the PR that makes it (workflow rule).
+
+1. **The erased-params decision survives contact with the SDK unchanged, via the
+   SDK's *non-generic* registration path.** `(*mcp.Server).AddTool(t *mcp.Tool,
+   h mcp.ToolHandler)` takes a handler over `*CallToolRequest` whose
+   `Params.Arguments` is a `json.RawMessage`, and `mcp.Tool.InputSchema` is an
+   `any` that accepts a hand-written `json.RawMessage` verbatim. The top-level
+   generic `mcp.AddTool[In, Out]` — the one that would have forced per-tool
+   binding code — is deliberately not used. `adapters/mcp` therefore has zero
+   per-tool code, exactly as deliverable 16 decided; no amendment needed.
+2. **`ports.ErrConnectionLost` moves into the domain.** 10a defined the sentinel
+   in `adapters/bridge`, but the connection controller has to *recognise* a loss
+   to retract the tools, and the domain may not import an adapter. It is now
+   declared in `domain/ports/session_dialer.go` beside the lifecycle it ends,
+   and `bridge.ErrConnectionLost` is an alias, so no 10a call site changed.
+3. **`domain/controllers/tools/dispatcher.go` was added** — a controller running
+   one tool call as a use case: it builds the per-call `ToolContext`, runs the
+   named tool, and applies the one rule every call shares (a lost connection
+   observed by a tool call makes the controller retract). Without it that rule
+   would live in the MCP adapter, which is the wrong layer for it, or be
+   repeated in fifteen tools.
+4. **The capability accessors live on `ToolContext`**, one per capability group,
+   each returning `(port, error)`. This is deliverable 16's "every tool still
+   checks" rendered so that forgetting is not expressible: a gated tool cannot
+   obtain its port any other way, and the `CapabilityError` it gets instead is
+   the structured error acceptance criterion 10 asks for.
+5. **A receiving-middleware capability backstop** (`adapters/mcp/backstop.go`).
+   Once a gated tool is retracted, the SDK answers a call to it with a JSON-RPC
+   `unknown tool` error, which would leave acceptance criterion 10's second
+   clause ("calling it directly returns a structured capability error") only
+   half true. The middleware intercepts `tools/call` for a name the registry
+   knows but the gate has not published, and runs it through the same dispatcher
+   — so the agent reads "reader nvda did not announce the braille capability"
+   instead of "unknown tool". A genuinely unknown name still gets the SDK's
+   error, and `tools/list` is untouched.
+6. **`ToolCatalog` is built by the registry, not by the connection controller**
+   (the layout summary's "Built by" column) — the registry is the single tool
+   list, so deriving the gate from it is what keeps the two from drifting. The
+   controller is *handed* the catalog by wiring and reads it.
+7. **The heartbeat is `Connection.RunHeartbeat(stop)`, run by wiring in a
+   goroutine**, rather than started implicitly on connect. A loop that a test
+   cannot step is a loop a test cannot assert on; this one sleeps on the `Clock`
+   port, so `FakeClock.OnSleep` drives it deterministically.
+8. **`status` reports the ping outcome through `Connection.Verify`**, which also
+   *records* a loss it discovers. That is what makes the answer proof rather
+   than possibly-stale local state, per deliverable 16's table.
+
 ## Class/file layout summary
 
 | File | Role | Built by | Collaborators |
@@ -858,8 +908,11 @@ rule, "if the layout changes while coding, the amendment rides in the PR").
 | `domain/entities/reader_listing.go` | entity | `connection.go` | readers and endpoints joined with liveness |
 | `domain/controllers/connection.go` | controller | wiring | dialer, probe, publisher, clock, log, catalog, endpoints |
 | `domain/controllers/tools/*.go` | controllers (one per tool) | `registry.go` | one port each, via `ToolContext` |
-| `domain/controllers/tools/tool_context.go` | parameter object | per call | ports + `ReaderSession` + clock |
-| `domain/controllers/tools/registry.go` | explicit map | wiring | the tool controllers |
+| `domain/controllers/tools/tool.go` | the `Tool` interface + `CapabilityError` | — | implemented by every tool |
+| `domain/controllers/tools/tool_context.go` | parameter object | `dispatcher.go`, per call | ports + `ReaderSession` + clock, plus the capability accessors |
+| `domain/controllers/tools/dispatcher.go` | controller — one tool call as a use case | wiring | registry, `ConnectionControl`, clock, log |
+| `domain/controllers/tools/registry.go` | explicit map | wiring | the tool controllers; also yields the `ToolCatalog` |
+| `adapters/mcp/backstop.go` | adapter — the retracted-tool capability error | `sdk_server.go` | catalog, dispatcher |
 | `adapters/ports/transport.go` | adapter seam | — | implemented by the leaves |
 | `adapters/bridge/json_lines_client.go` | adapter (all decisions) | wiring | `Transport`, `adapters/wire` |
 | `adapters/bridge/handshake.go` | adapter | wiring | `Transport`, `adapters/wire` |

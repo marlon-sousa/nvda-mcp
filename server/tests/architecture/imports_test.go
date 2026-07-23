@@ -90,15 +90,24 @@ func TestDomainImportsNoAdaptersAndNoSDK(t *testing.T) {
 // The test doubles are an importable package rather than _test.go files,
 // because a fake is needed by the tests of SEVERAL packages -- FakeClock serves
 // the bridge client, the handshake and the integration tier -- and a _test.go
-// file cannot be imported from another package.
+// file cannot be imported from another package. The same is true of the
+// builders in testsupport/.
 //
-// The price of that is a package nothing structurally stops production code from
-// importing. This is what stops it: a fake reaching the shipped binary would put
-// scripted behaviour behind a port at runtime, which is the one failure a test
-// double must never be able to cause.
-func TestOnlyTestsImportTheFakes(t *testing.T) {
+// The price of that is two packages nothing structurally stops production code
+// from importing. This is what stops it: a fake reaching the shipped binary
+// would put scripted behaviour behind a port at runtime, which is the one
+// failure a test double must never be able to cause.
+//
+// AMENDED IN 10b: testsupport/ is exempt as an IMPORTER of fakes -- its builders
+// assemble port doubles into whole scenarios (a live session with these
+// capabilities), which is exactly what it is for -- and is itself added to what
+// production code may not import, so the exemption widens nothing.
+func TestOnlyTestsImportTheTestPackages(t *testing.T) {
 	fileSet := token.NewFileSet()
-	const fakesPackage = "screen-readers-mcp/server/fakes"
+	testOnlyPackages := []string{
+		"screen-readers-mcp/server/fakes",
+		"screen-readers-mcp/server/testsupport",
+	}
 
 	err := filepath.WalkDir(serverRoot, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
@@ -107,18 +116,28 @@ func TestOnlyTestsImportTheFakes(t *testing.T) {
 		if entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return nil
 		}
+		// testsupport/ and fakes/ are themselves test-only, so they may
+		// reach for each other. Nothing else may reach for either.
+		slashed := filepath.ToSlash(path)
+		if strings.Contains(slashed, "/testsupport/") || strings.Contains(slashed, "/fakes/") {
+			return nil
+		}
+
 		file, err := parser.ParseFile(fileSet, path, nil, parser.ImportsOnly)
 		if err != nil {
 			return err
 		}
 		for _, imported := range file.Imports {
-			if strings.Contains(strings.Trim(imported.Path.Value, `"`), fakesPackage) {
-				t.Errorf(
-					"%s is not a test file and imports the fakes.\n"+
-						"Test doubles must never be reachable from the shipped binary; "+
-						"if production code needs this behaviour, it needs a real adapter.",
-					filepath.ToSlash(path),
-				)
+			importPath := strings.Trim(imported.Path.Value, `"`)
+			for _, testOnly := range testOnlyPackages {
+				if strings.Contains(importPath, testOnly) {
+					t.Errorf(
+						"%s is not a test file and imports %q.\n"+
+							"Test scaffolding must never be reachable from the shipped binary; "+
+							"if production code needs this behaviour, it needs a real adapter.",
+						slashed, importPath,
+					)
+				}
 			}
 		}
 		return nil

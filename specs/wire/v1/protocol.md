@@ -31,6 +31,14 @@ bridge depends on it, changes go through a version bump.
   Either way the framing and every command below are identical: the choice of
   transport is a connection-establishment detail, invisible once `hello` has
   completed.
+- **Pipe naming convention.** A bridge offering a named pipe SHOULD name it
+  `<reader>McpBridge`, where `<reader>` is the same value the bridge sends as
+  `hello`'s `reader.name`. The convention exists so that a server can ship a
+  sane default endpoint for a reader, and a user can predict the name when
+  configuring one by hand. It is a naming rule only: it confers no trust, a
+  server never infers an endpoint from the namespace, and `hello` remains the
+  sole authority on which reader actually answered. The NVDA bridge already
+  satisfies it (`\\.\pipe\nvdaMcpBridge`, `reader.name = "nvda"`).
 - Framing is **JSON Lines**: each message is one JSON **object**, UTF-8 encoded,
   serialized without embedded newlines, terminated by a single `\n`. A reader
   reassembles chunks into newline-delimited frames and must drain any complete

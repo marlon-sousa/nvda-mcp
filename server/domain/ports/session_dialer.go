@@ -21,10 +21,24 @@
 package ports
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/marlon-sousa/screen-readers-mcp/server/domain/entities"
 )
+
+// ErrConnectionLost is the connection ending underneath a call: EOF, a reset, or
+// a close.
+//
+// SPEC AMENDMENT (rides in 10b): 10a declared this sentinel in adapters/bridge,
+// where it was raised. It belongs here, because the party that must RECOGNISE a
+// loss is the connection controller -- it retracts the gated tools and records
+// why -- and the domain may not import an adapter. bridge.ErrConnectionLost is
+// now an alias of this, so no 10a call site changed.
+//
+// A sentinel rather than a type because the response is the same whatever the
+// cause: retract, record, and let the agent connect again when it chooses.
+var ErrConnectionLost = errors.New("bridge connection lost")
 
 // SessionOptions are the per-session parameters the wire fixes at `hello` for
 // the session's whole lifetime (protocol.md §3, §4).
