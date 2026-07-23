@@ -50,9 +50,11 @@ jobs:
         working-directory: server
     steps:
       - uses: actions/checkout@v4
+      # 1.25 since 10b: the official MCP Go SDK declares `go 1.25.0`, so the
+      # module that depends on it must too. Nothing else asked for the bump.
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.25'
           cache-dependency-path: server/go.sum
       - name: Build
         run: go build ./...

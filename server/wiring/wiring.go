@@ -12,17 +12,18 @@
 // failure. If this ever gets genuinely hard to follow, it becomes an explicit
 // hand-written file of factory functions -- same central place, zero
 // dependencies.
-//
-// In 10a it builds everything up to and including a handshake-capable dialer.
-// 10b extends it with the MCP server, the tool registry and the connection
-// controller; the returned Server value is where those will hang.
 package wiring
 
 import (
+	"context"
+
 	"github.com/marlon-sousa/screen-readers-mcp/server/adapters"
 	"github.com/marlon-sousa/screen-readers-mcp/server/adapters/bridge"
 	"github.com/marlon-sousa/screen-readers-mcp/server/adapters/discovery"
+	mcpadapter "github.com/marlon-sousa/screen-readers-mcp/server/adapters/mcp"
 	"github.com/marlon-sousa/screen-readers-mcp/server/config"
+	"github.com/marlon-sousa/screen-readers-mcp/server/domain/controllers"
+	"github.com/marlon-sousa/screen-readers-mcp/server/domain/controllers/tools"
 	"github.com/marlon-sousa/screen-readers-mcp/server/domain/ports"
 )
 
@@ -46,6 +47,13 @@ type Options struct {
 // side effect -- which is what keeps concurrent sessions reachable later as a
 // map plus a routing parameter rather than an unpicking of globals.
 type Server struct {
+	// MCP is the endpoint an MCP client talks to, and the tool publisher the
+	// connection controller drives.
+	MCP *mcpadapter.Server
+
+	// Connection is the session lifecycle: the only stateful thing here.
+	Connection *controllers.Connection
+
 	// Endpoints is the resolved reader set.
 	Endpoints ports.EndpointSource
 
@@ -88,11 +96,52 @@ func Build(opts Options) (*Server, error) {
 	// and the handshake drives the ordered attempt and the `hello` exchange.
 	dialer := bridge.NewHandshake(bridge.DialerFor, clock, log)
 
+	// The tool list, and the gate derived from it. One list, one gate.
+	registry := tools.BuildRegistry()
+
+	// The MCP server is built first because the connection controller needs a
+	// publisher; it is BOUND last, because it needs the dispatcher, which
+	// needs the controller. That ring is the reason Bind exists (see
+	// adapters/mcp/sdk_server.go), and this is the only place it is visible.
+	mcpServer, err := mcpadapter.NewServer(registry, log)
+	if err != nil {
+		return nil, err
+	}
+
+	connection := controllers.NewConnection(
+		endpoints, probe, dialer, mcpServer, registry.Catalog(), clock, log,
+	)
+
+	mcpServer.Bind(tools.NewDispatcher(registry, connection, clock, log), connection)
+
 	return &Server{
-		Endpoints: endpoints,
-		Probe:     probe,
-		Dialer:    dialer,
-		Clock:     clock,
-		Log:       log,
+		MCP:        mcpServer,
+		Connection: connection,
+		Endpoints:  endpoints,
+		Probe:      probe,
+		Dialer:     dialer,
+		Clock:      clock,
+		Log:        log,
 	}, nil
+}
+
+// Run serves MCP over stdio until the host closes stdin, then ends any live
+// session politely.
+//
+// The heartbeat runs for the PROCESS's lifetime rather than a session's, since
+// it is a no-op while nothing is connected -- so there is no start/stop
+// bookkeeping to get wrong on either connect or teardown.
+func (s *Server) Run(ctx context.Context) error {
+	heartbeat := make(chan struct{})
+	go s.Connection.RunHeartbeat(heartbeat)
+
+	defer func() {
+		close(heartbeat)
+		// A live session is ended politely on the way out, rather than
+		// dropped for the reader to discover by watchdog.
+		s.Connection.Close()
+	}()
+
+	s.Log.Infof("serving MCP over stdio; %d reader(s) configured", len(s.Endpoints.Readers()))
+	return s.MCP.Run(ctx)
 }
