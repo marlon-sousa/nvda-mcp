@@ -48,17 +48,22 @@ const (
 	secondLine    = "Links radio button checked"
 	brailleCells  = "elements lst dlg"
 	fakeSynth     = "espeak"
+	announcedHint = "Taking over: I need a password."
 )
 
 // ungatedTools is what a server with no session advertises; gatedTools is what
-// this bridge's announced capabilities must add. `announce` is announced too and
-// gates nothing here -- there is no announce tool -- which is exactly the
-// "ignore what you do not know" clause of protocol.md §4 being exercised against
-// a real announcement rather than a scripted one.
+// this bridge's announced capabilities must add.
+//
+// `announce` joined this list in entry 11a. Until then the bridge announced the
+// capability and the server had no tool behind it, which exercised the "ignore
+// what you do not know" clause of protocol.md §4 against a real announcement.
+// That clause is still covered -- by focus/state/config below, which the wire
+// defines and this bridge does not serve.
 var (
 	ungatedTools = []string{"connect_reader", "disconnect_reader", "list_readers", "status"}
 
 	gatedTools = []string{
+		"announce",                  // announce
 		"get_braille",               // braille
 		"get_last_speech",           // speech
 		"get_next_speech_index",     // speech
@@ -98,6 +103,7 @@ func runWholeSession(t *testing.T, transport string) {
 	exerciseGestures(t, harness)
 	exerciseSpeech(t, harness)
 	exerciseBraille(t, harness)
+	exerciseAnnounce(t, harness)
 	assertStatusIsProvenOnTheWire(t, harness)
 	assertInfoDescribesTheSession(t, harness, session)
 
@@ -295,6 +301,25 @@ func exerciseBraille(t *testing.T, harness *testsupport.MCPHarness) {
 	if captured.ToIndex <= 0 {
 		t.Errorf("braille range [%d, %d) covers nothing, but the display had content",
 			captured.FromIndex, captured.ToIndex)
+	}
+}
+
+// exerciseAnnounce is the `announce` capability group -- the one command that
+// addresses a human rather than the reader.
+//
+// This tier is the only place it crosses a real binding into a real
+// AnnounceHandler: every other Go-side test puts a fake bridge behind it, and a
+// fake encoding with the same generated binding cannot disagree with itself.
+func exerciseAnnounce(t *testing.T, harness *testsupport.MCPHarness) {
+	t.Helper()
+
+	var spoken struct {
+		Announced string `json:"announced"`
+	}
+	harness.Call(t, "announce", map[string]any{"text": announcedHint}).Decode(t, &spoken)
+
+	if spoken.Announced != announcedHint {
+		t.Errorf("announce = %q, want the text echoed back unchanged", spoken.Announced)
 	}
 }
 

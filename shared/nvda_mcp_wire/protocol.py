@@ -102,7 +102,8 @@ class CaptureMode(StrEnum):
 	accepted).
 	"""
 
-	#: Bundled spy synth replaces the real synth for the session. Deterministic.
+	#: Speech is intercepted before the synth and captured there; the user hears
+	#: nothing and the real synth stays loaded and active (spec 0008).
 	SILENT = "silent"
 	#: Hook ``pre_speechQueued``; the real synth keeps talking.
 	LIVE = "live"

@@ -99,12 +99,13 @@ type ReaderConnection struct {
 	Lifecycle SessionLifecycle
 
 	// The capability ports. Nil unless announced.
-	Speech   SpeechReader
-	Braille  BrailleReader
-	Gestures GestureSender
-	Focus    FocusInspector
-	State    StateInspector
-	Config   ConfigAccessor
+	Speech    SpeechReader
+	Braille   BrailleReader
+	Gestures  GestureSender
+	Focus     FocusInspector
+	State     StateInspector
+	Config    ConfigAccessor
+	Announcer Announcer
 }
 
 // SessionDialer opens a session with one configured reader.

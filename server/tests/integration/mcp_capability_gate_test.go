@@ -24,9 +24,9 @@ import (
 	"github.com/marlon-sousa/screen-readers-mcp/server/testsupport"
 )
 
-// everyGatedTool is what a reader announcing all six capabilities should see.
+// everyGatedTool is what a reader announcing every capability should see.
 var everyGatedTool = []string{
-	"get_braille", "get_config", "get_focus_info", "get_last_speech",
+	"announce", "get_braille", "get_config", "get_focus_info", "get_last_speech",
 	"get_next_speech_index", "get_speech", "get_state", "press_gesture",
 	"set_config", "wait_for_speech", "wait_for_speech_to_finish",
 }
@@ -34,8 +34,8 @@ var everyGatedTool = []string{
 // nvda is a bridge announcing exactly these capabilities and nothing else.
 //
 // The empty slice is made non-nil deliberately: BridgeOptions distinguishes "the
-// test did not say" (nil, meaning all six) from "this reader announces none",
-// and it is the second that the gate's hardest case needs.
+// test did not say" (nil, meaning every capability) from "this reader announces
+// none", and it is the second that the gate's hardest case needs.
 func nvda(capabilities ...wire.Capability) testsupport.BridgeOptions {
 	if capabilities == nil {
 		capabilities = []wire.Capability{}

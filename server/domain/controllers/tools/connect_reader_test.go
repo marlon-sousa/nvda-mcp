@@ -156,8 +156,8 @@ func TestTheResultDescribesTheSessionThatWasEstablished(t *testing.T) {
 	if got.Endpoint != "pipe:nvdaMcpBridge" {
 		t.Errorf("endpoint = %q, want the one that answered", got.Endpoint)
 	}
-	if len(got.Capabilities) != 6 {
-		t.Errorf("capabilities = %v, want all six announced", got.Capabilities)
+	if len(got.Capabilities) != len(testsupport.EveryCapability()) {
+		t.Errorf("capabilities = %v, want every capability announced", got.Capabilities)
 	}
 	// Acceptance criterion 5: the mode reported is the one the BRIDGE
 	// confirmed, which is what makes the check meaningful rather than an echo.

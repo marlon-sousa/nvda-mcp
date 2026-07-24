@@ -106,8 +106,8 @@ func TestALiveSessionIsProvedByARealRoundTrip(t *testing.T) {
 	if answer.Session.Reader != "nvda" || answer.Session.Endpoint != "pipe:nvdaMcpBridge" {
 		t.Errorf("session = %+v, want the reader and endpoint that answered", *answer.Session)
 	}
-	if len(answer.Session.Capabilities) != 6 {
-		t.Errorf("capabilities = %v, want all six", answer.Session.Capabilities)
+	if len(answer.Session.Capabilities) != len(testsupport.EveryCapability()) {
+		t.Errorf("capabilities = %v, want every capability", answer.Session.Capabilities)
 	}
 	if answer.Session.LogPath == "" || answer.Session.ReaderLogPath == "" {
 		t.Error("both session log paths must be reported")

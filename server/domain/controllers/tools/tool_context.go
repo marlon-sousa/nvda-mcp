@@ -130,6 +130,14 @@ func (c ToolContext) Config() (ports.ConfigAccessor, error) {
 	return c.Connection.Config, nil
 }
 
+// Announcer is the `announce` capability, or a structured error.
+func (c ToolContext) Announcer() (ports.Announcer, error) {
+	if c.Connection == nil || c.Connection.Announcer == nil {
+		return nil, c.missing(entities.CapabilityAnnounce)
+	}
+	return c.Connection.Announcer, nil
+}
+
 // missing builds the error, naming the connected reader when there is one --
 // which is what tells "nothing is connected" apart from "this reader cannot do
 // that", two situations with entirely different remedies.

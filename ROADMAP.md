@@ -50,6 +50,11 @@ real-world → **F** packaging. Each board entry belongs to one session.
 RFC, agreed 2026-07-18) added one cross-cutting wire entry to lane 1 (entry 8,
 a headless B follow-up) and amended the scope of entries 9 and 12.
 
+Session E was originally one entry (11). It became four on 2026-07-23 — 11
+(the real-world run), 11.1 (introspection), 11.2 (human-in-the-loop) and 11.3
+(observe-only) — with the run deliberately first. See the note under
+Convergence for why.
+
 ## Status board — lane 1: bridge
 
 **Lane 1 is complete** as of 2026-07-22: every entry below is Done, milestones
@@ -181,8 +186,9 @@ scheduled. Work now proceeds in lane 2.
 ## Status board — lane 2: server (headless; may run parallel to lane 1)
 
 **Lane 2's only entry is complete** as of 2026-07-23: session D is closed, and
-with lane 1 already complete, entry 11 (convergence — introspection and the
-real-world run against a live NVDA) is unblocked and is the next step.
+with lane 1 already complete, convergence is unblocked. The next step is
+**entry 11a** (expose `announce`), then **11b** (the real-world run) — see the
+resequencing note under Convergence below.
 
 10. **Done (PRs #29, #30, #31, #32, #33, #34, #35, #36, #37, #38,
     2026-07-23)** — D, MCP server — **in Go**, a statically linked binary
@@ -236,12 +242,77 @@ real-world run against a live NVDA) is unblocked and is the next step.
 
 ## Convergence (requires C and D both Done)
 
-11. E, introspection + real-world: focus/braille/config tools; end-to-end run
-    against EnhancedFindDialog with Claude Code as the MCP client. Needs live
-    NVDA. Spec: none yet → specify when unblocked. Scope sketch: RFC 0001
-    milestones 5–6. The live-NVDA integration tests here are what prove each
-    real adapter behaves like its fake — findings spawn iteration entries
-    (E.1, E.2, …) in this board.
+**Entry 11 was resequenced on 2026-07-23** (agreed in conversation). It
+originally read "introspection + real-world" as one entry. It is now **four**,
+because a discovery pass found that the two halves have almost nothing to do
+with each other and that the real-world run is not blocked on anything:
+
+- The server side of introspection is **already complete**. `FocusInfo()`,
+  `State()`, `GetConfig()` and `SetConfig()` exist on `JSONLinesClient`, the
+  four tools exist, and the capability gate covers them — all merged in 10b.
+  The entire remaining gap is bridge-side: `NVDA_CAPABILITIES` in
+  `domain/controllers/commands/registry.py` announces only
+  speech/braille/gestures/announce, and the four commands answer
+  `NotImplementedHandler`. So introspection is a **lane-1-only** entry.
+- The real-world run therefore needs **nothing new**: the gate derives the
+  advertised tool set from what `hello` announced, so an agent connecting today
+  sees the four ungated tools, the five speech tools, `getBraille` and
+  `pressGesture` — press a gesture, read what was said, which is the core loop
+  the run exists to exercise. Running it first means the findings shape the
+  entries after it instead of being guessed at.
+
+**The run is `live` mode, attended — Decided (2026-07-23).** This is what makes
+the ordering work. In `silent` mode all of NVDA's speech is suppressed, so an
+agent that announces "I am stuck" tells the tester something they then cannot
+act on: they cannot hear their way to the chat window to reply, and their only
+escape is the panic gesture, which stops the whole bridge. In `live` mode the
+real synth keeps talking, so the tester hears the app, hears themselves reach
+the agent's window, and answers there normally. Silent + unattended is exactly
+the configuration that needs entry 11.2, which is why 11.2 comes after the run
+rather than before it.
+
+11. **E, the real-world run** — split into two sequential PRs, one spec:
+    [0014-announce-and-real-world-run.md](specs/0014-announce-and-real-world-run.md)
+    (**drafted 2026-07-23, awaiting review**; rides in 11a's branch). Scope:
+    RFC 0001 milestone 6.
+    - **11a** — **Done (PR #39, 2026-07-24)**: expose `announce` at the MCP
+      server. The bridge half has shipped
+      since 9c (spec 0008): `NvdaAnnouncer` speaks straight through
+      `getSynth().speak()`, which bypasses the suppression filter, so a hint is
+      audible even mid-silence, and the bridge already advertises
+      `Capability.ANNOUNCE`. The server simply never exposed it — there is no
+      `announce` tool and no `CapabilityAnnounce` in the domain vocabulary, so
+      the one channel the agent has for reaching a human is unreachable. Five
+      files: a domain port, a `JSONLinesClient` method, the domain capability
+      constant plus its handshake mapping, the tool, and a registry line.
+      `CommandAnnounce`, `CapabilityAnnounce` and `AnnounceParams` already exist
+      in the generated binding, so the wire needs no change.
+    - **11b** — the end-to-end run against
+      [EnhancedFindDialog](../EnhancedFindDialog) with Claude Code as the MCP
+      client, `live` mode, tester at the keyboard. The live-NVDA checks here are
+      what prove each real adapter behaves like its fake. **Findings are the
+      deliverable**: they spawn iteration entries (E.1, E.2, …) in this board,
+      per the checklist rule above.
+11.1. **E, bridge introspection** (lane 1). The four handlers behind
+    `getFocusInfo` / `getState` / `getConfig` / `setConfig`, their ports and
+    NVDA adapters, and re-widening `NVDA_CAPABILITIES` to announce `focus`,
+    `state` and `config` — at which point the server's four already-built tools
+    light up with no server change at all. Needs live NVDA. Spec:
+    `0015-bridge-introspection.md` (drafted, awaiting review; rides in 11.1's own
+    PR). Scope: RFC 0001 milestone 5.
+11.2. **E, human-in-the-loop** (both lanes). The agent asks the tester for
+    something it cannot supply itself — a password, a CAPTCHA, a physical act —
+    and gets an answer back, without ending the session. Needs live NVDA. Spec:
+    `0016-human-in-the-loop.md` (drafted, awaiting review; rides in 11.2's own
+    PR). Deliberately scheduled **after** the run, so the run says whether the
+    cheap shape (announce, suspend suppression, wait for an acknowledgement
+    gesture) is enough before a reply dialog is built.
+11.3. **E, enforced observe-only** (both lanes). A session where the bridge
+    *rejects* `pressGesture` and `setConfig`, so the tester drives and the agent
+    can only watch. Orthogonal to capture mode — capture mode is about audio,
+    this is about input — so it is a `control` field on `hello`, not a third
+    `CaptureMode`. Spec: `0017-observe-only-control.md` (drafted, awaiting
+    review; rides in 11.3's own PR).
 12. F, packaging/release — split into two entries (agreed 2026-07-22), because
     the bridge's release path is decidable now while the server's distribution
     still has open questions from [spec 0005](specs/0005-multi-reader-direction.md).

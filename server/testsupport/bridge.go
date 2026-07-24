@@ -35,8 +35,8 @@ type BridgeOptions struct {
 	// generic reader, so a test that is not about identity need not say.
 	Reader wire.ReaderInfo
 
-	// Capabilities is what `hello` announces. Nil announces all six groups;
-	// an EMPTY non-nil slice announces none, which is how "a reader without
+	// Capabilities is what `hello` announces. Nil announces every group; an
+	// EMPTY non-nil slice announces none, which is how "a reader without
 	// braille" is expressed.
 	Capabilities []wire.Capability
 
@@ -62,12 +62,18 @@ type FakeBridge struct {
 	conn     net.Conn
 }
 
-// EveryWireCapability is the six groups protocol.md §4 defines, for the tests
-// whose subject is not the gate.
+// EveryWireCapability is every group protocol.md §4 defines, for the tests whose
+// subject is not the gate.
+//
+// It includes `announce`, which the REAL NVDA bridge has advertised since entry
+// 9c. A fake that announced less than the bridge it stands in for would model a
+// reader this project does not ship, and the tool behind that capability would
+// go unexercised in every tier whose bridge is this fake.
 func EveryWireCapability() []wire.Capability {
 	return []wire.Capability{
 		wire.CapabilitySpeech, wire.CapabilityBraille, wire.CapabilityGestures,
 		wire.CapabilityFocus, wire.CapabilityState, wire.CapabilityConfig,
+		wire.CapabilityAnnounce,
 	}
 }
 
@@ -78,10 +84,7 @@ func NewFakeBridge(opts BridgeOptions) *FakeBridge {
 		opts.Reader = wire.ReaderInfo{Name: "fakereader", Version: "1.0"}
 	}
 	if opts.Capabilities == nil {
-		opts.Capabilities = []wire.Capability{
-			wire.CapabilitySpeech, wire.CapabilityBraille, wire.CapabilityGestures,
-			wire.CapabilityFocus, wire.CapabilityState, wire.CapabilityConfig,
-		}
+		opts.Capabilities = EveryWireCapability()
 	}
 	if opts.ProtocolVersion == 0 {
 		opts.ProtocolVersion = wire.ProtocolVersion
