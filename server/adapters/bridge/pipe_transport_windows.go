@@ -19,7 +19,9 @@
 package bridge
 
 import (
+	"errors"
 	"net"
+	"os"
 	"time"
 
 	winio "github.com/Microsoft/go-winio"
@@ -54,11 +56,24 @@ func pipeDialer(name string) (adapterports.Dialer, error) {
 
 // Read applies the seam's poll deadline, so an idle read surfaces as
 // os.ErrDeadlineExceeded rather than blocking forever.
+//
+// The translation is not a decision, it is this leaf honouring the seam: go-winio
+// reports an expired deadline as its OWN winio.ErrTimeout, while the seam (and
+// every other leaf, which gets it from net) spells that os.ErrDeadlineExceeded.
+// Untranslated, the client reads "idle" as "the connection died", so every
+// command that takes longer than one poll interval -- any wait, any gesture that
+// makes the reader speak -- would fail over the pipe, which is the transport the
+// NVDA bridge ships listening on. It is the analogue of the bridge's own
+// SocketTransport reporting an abrupt reset as EOF.
 func (t *pipeTransport) Read(p []byte) (int, error) {
 	if err := t.conn.SetReadDeadline(time.Now().Add(adapterports.PollInterval)); err != nil {
 		return 0, err
 	}
-	return t.conn.Read(p)
+	n, err := t.conn.Read(p)
+	if errors.Is(err, winio.ErrTimeout) {
+		return n, os.ErrDeadlineExceeded
+	}
+	return n, err
 }
 
 func (t *pipeTransport) Write(p []byte) (int, error) { return t.conn.Write(p) }

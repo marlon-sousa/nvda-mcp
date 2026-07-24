@@ -1,10 +1,11 @@
 // screenreader-mcp tests -- the import boundaries.
 // Copyright (C) 2026 Marlon Brandao de Sousa. GPL-2. See COPYING.txt.
 //
-// ROLE: architecture test. Two import boundaries that review would otherwise
-// have to hold on its own: acceptance criterion 12 -- nothing under domain/
-// imports adapters/wire or the MCP SDK -- and the rule that only tests may
-// import the fakes.
+// ROLE: architecture test. Three boundaries that review would otherwise have to
+// hold on its own: acceptance criterion 12 -- nothing under domain/ imports
+// adapters/wire or the MCP SDK -- the rule that only tests may import the fakes,
+// and (from 10c) the rule that the conformance tier may never substitute the
+// fake bridge for the real one.
 //
 // DELIBERATELY NOT BEHIND A BUILD TAG, unlike its neighbours in tests/. The
 // tagged tiers are tagged because they are slow or platform-bound; this one
@@ -22,6 +23,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -144,6 +146,58 @@ func TestOnlyTestsImportTheTestPackages(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("walking %s: %v", serverRoot, err)
+	}
+}
+
+// The conformance tier may not reach for the FAKE bridge, at all.
+//
+// This is the one rule of that tier written down as a test rather than left to
+// review, because breaking it produces a GREEN run that proves nothing. Every
+// other tier's bridge encodes frames with the same generated binding the server
+// decodes them with, so a bug in the binding is invisible to it; the conformance
+// job exists only because the real Python bridge is on the other end. A
+// conformance test that fell back to the Go fake -- to fix a red Windows run, at
+// the end of a long day -- would still pass, and would assert the guarantee
+// without providing it. That is worse than having no conformance job.
+//
+// Source text rather than imports, deliberately: the tier legitimately imports
+// testsupport for the MCP client harness, so what has to be absent is the fake
+// BRIDGE itself, which no import list can express.
+func TestTheConformanceTierCannotUseTheFakeBridge(t *testing.T) {
+	const conformanceRoot = "../conformance"
+
+	forbiddenNames := []string{"FakeBridge", "BridgeOptions"}
+	checked := 0
+
+	err := filepath.WalkDir(conformanceRoot, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() || !strings.HasSuffix(path, ".go") {
+			return nil
+		}
+		source, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		checked++
+		for _, name := range forbiddenNames {
+			if strings.Contains(string(source), name) {
+				t.Errorf("%s mentions %s.\n"+
+					"The conformance tier's whole purpose is that the bridge on the other "+
+					"end is the REAL Python one: a run that used the fake would pass while "+
+					"proving nothing about the wire contract. If the real bridge cannot be "+
+					"reached, the run must FAIL.",
+					filepath.ToSlash(path), name)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walking %s: %v", conformanceRoot, err)
+	}
+	if checked == 0 {
+		t.Fatalf("no Go files found under %s; this rule is checking nothing", conformanceRoot)
 	}
 }
 
