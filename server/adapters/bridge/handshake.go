@@ -184,5 +184,8 @@ func (h *Handshake) hello(client *JSONLinesClient, endpoint entities.Endpoint, o
 	if capabilities.Has(entities.CapabilityConfig) {
 		connection.Config = client
 	}
+	if capabilities.Has(entities.CapabilityAnnounce) {
+		connection.Announcer = client
+	}
 	return connection, nil
 }

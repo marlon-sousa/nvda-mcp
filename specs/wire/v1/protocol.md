@@ -113,11 +113,21 @@ Fault handling, all of which keep the session alive once established (§3):
 **Capture mode** is chosen once, at `hello`, and fixes how speech is captured for
 the whole session:
 
-- `silent` — a bundled spy synthesizer replaces the reader's real synth for the
-  session; speech is captured deterministically and the user hears nothing. The
-  bridge **must** restore the real synth on every teardown path (§6).
+- `silent` — the reader's speech is intercepted *before* it reaches the
+  synthesizer and captured there, so the user hears nothing. The real synth stays
+  loaded and active throughout: nothing is swapped, renamed or terminated, so the
+  reader and every add-on running inside it continue to see their configured
+  synth, valid and in use. The bridge **must** lift the interception on every
+  teardown path (§6). (The NVDA bridge does this at
+  `speech.extensions.filter_speechSequence`; see spec 0008, which replaced an
+  earlier design that swapped in a bundled spy synthesizer.)
 - `live` — the real synth keeps speaking; speech is captured by observation.
   Ordering/timing is best-effort rather than exact.
+
+A bridge may still offer a human-facing channel that is audible in `silent`
+mode — see the `announce` capability below. It bypasses the interception rather
+than defeating it: the point of `silent` is that the *reader's* output is
+captured, not that the machine is mute.
 
 **Capabilities** announce which command groups this bridge can serve. Each value
 names one group:
@@ -130,6 +140,7 @@ names one group:
 | `focus` | `getFocusInfo` |
 | `state` | `getState` |
 | `config` | `getConfig`, `setConfig` |
+| `announce` | `announce` |
 
 Rules:
 
@@ -137,7 +148,9 @@ Rules:
   without breaking older peers. (This is the one forward-compatibility carve-out
   beyond "ignore unknown fields".)
 - A command whose group is **not** in the announced set may be rejected with a
-  normal error response. The NVDA bridge announces all six.
+  normal error response. The NVDA bridge announces `speech`, `braille`,
+  `gestures` and `announce` today; `focus`, `state` and `config` are defined by
+  this contract and served by no bridge yet, so it does not announce them.
 - `hello`, `ping`, `echo`, and `bye` are lifecycle/diagnostic commands and belong
   to no capability group; they are always available once the session permits them
   (§3).
@@ -172,6 +185,11 @@ means the command takes no parameters. Summary:
 - `getConfig` `{ keyPath: [string] }` → `{ value }` — read a reader config value;
   `keyPath` is an opaque path into the reader's config tree.
 - `setConfig` `{ keyPath: [string], value }` → `{ value }` — write one.
+- `announce` `{ text }` → `{ ok: true }` — speak `text` to the **human** at the
+  reader. A bridge→human hint channel, not agent-facing data: it is audible even
+  in `silent` mode (§4), which is its whole purpose, because that is the mode in
+  which the person can otherwise hear nothing. The bridge acknowledges that it
+  spoke, never that anyone listened. There is no reply channel in v1.
 - `bye` → `{ ok: true }` — the server asks to end the session (§6).
 
 Reader-specific vocabulary — gesture ids, roles, states, config key paths, state
@@ -192,9 +210,12 @@ A session ends on any of: `bye`, the peer closing the connection (EOF), either
 watchdog firing, or an out-of-order pre-handshake command (§3).
 
 On **every** teardown path the bridge must run its restoration: in `silent` mode
-that means putting the user's real synthesizer back. A crashed or disconnected
-server must never leave the reader mute — this is the contract's single most
-important invariant.
+that means lifting the speech interception, so the reader speaks again. A crashed
+or disconnected server must never leave the reader mute — this is the contract's
+single most important invariant, and a bridge should arrange its interception so
+that losing the bridge *itself* lifts it. (The NVDA bridge gets this from NVDA
+holding extension-point handlers weakly: if the add-on dies, the filter drops
+with it.)
 
 ## 7. Index semantics
 

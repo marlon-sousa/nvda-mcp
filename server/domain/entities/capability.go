@@ -22,9 +22,12 @@ import "sort"
 type Capability string
 
 // The groups the wire contract defines (protocol.md §4). A bridge may announce
-// strings beyond these -- the NVDA bridge announces `announce` as well -- and a
-// consumer must ignore what it does not know, so Set retains unknown members
-// rather than dropping or rejecting them.
+// strings beyond these, and a consumer must ignore what it does not know, so Set
+// retains unknown members rather than dropping or rejecting them.
+//
+// `announce` joined the contract with spec 0008 and has been advertised by the
+// NVDA bridge since entry 9c; it reached this vocabulary in 11a, which is when
+// the server first had a tool to put behind it.
 const (
 	CapabilitySpeech   Capability = "speech"
 	CapabilityBraille  Capability = "braille"
@@ -32,6 +35,7 @@ const (
 	CapabilityFocus    Capability = "focus"
 	CapabilityState    Capability = "state"
 	CapabilityConfig   Capability = "config"
+	CapabilityAnnounce Capability = "announce"
 )
 
 // Set is an immutable set of announced capabilities.

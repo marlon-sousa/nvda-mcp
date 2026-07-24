@@ -125,6 +125,7 @@ var (
 	_ ports.FocusInspector   = (*JSONLinesClient)(nil)
 	_ ports.StateInspector   = (*JSONLinesClient)(nil)
 	_ ports.ConfigAccessor   = (*JSONLinesClient)(nil)
+	_ ports.Announcer        = (*JSONLinesClient)(nil)
 	_ ports.SessionLifecycle = (*JSONLinesClient)(nil)
 )
 
@@ -203,6 +204,12 @@ func (c *JSONLinesClient) PressGestures(ids []string) error {
 	// The ids pass through untouched: gesture syntax is the reader's, and the
 	// server routes it without interpreting it.
 	return c.call(wire.CommandPressGesture, wire.PressGestureParams{Gestures: ids}, nil, DefaultCallTimeout)
+}
+
+func (c *JSONLinesClient) Announce(text string) error {
+	// The result is an acknowledgement, so it is discarded: the bridge cannot
+	// report whether a human listened, only that it spoke.
+	return c.call(wire.CommandAnnounce, wire.AnnounceParams{Text: text}, nil, DefaultCallTimeout)
 }
 
 func (c *JSONLinesClient) FocusInfo() (ports.FocusInfo, error) {

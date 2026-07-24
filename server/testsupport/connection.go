@@ -36,6 +36,7 @@ type Connection struct {
 	Focus     *fakes.FakeFocusInspector
 	State     *fakes.FakeStateInspector
 	Config    *fakes.FakeConfigAccessor
+	Announcer *fakes.FakeAnnouncer
 }
 
 // NewConnection builds a session for a reader announcing exactly these
@@ -90,14 +91,19 @@ func NewConnection(reader string, announced ...entities.Capability) *Connection 
 		built.Config = fakes.NewFakeConfigAccessor()
 		built.Connection.Config = built.Config
 	}
+	if set.Has(entities.CapabilityAnnounce) {
+		built.Announcer = fakes.NewFakeAnnouncer()
+		built.Connection.Announcer = built.Announcer
+	}
 	return built
 }
 
-// EveryCapability is the six groups the wire contract defines, for the tests
-// whose subject is not the gate.
+// EveryCapability is every group the wire contract defines, for the tests whose
+// subject is not the gate.
 func EveryCapability() []entities.Capability {
 	return []entities.Capability{
 		entities.CapabilitySpeech, entities.CapabilityBraille, entities.CapabilityGestures,
 		entities.CapabilityFocus, entities.CapabilityState, entities.CapabilityConfig,
+		entities.CapabilityAnnounce,
 	}
 }

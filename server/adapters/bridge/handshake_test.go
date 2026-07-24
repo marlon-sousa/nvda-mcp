@@ -99,6 +99,9 @@ func TestDialHandsOverOnlyTheAnnouncedCapabilities(t *testing.T) {
 	if connection.Config != nil {
 		t.Error("config was NOT announced but a ConfigAccessor was handed over")
 	}
+	if connection.Announcer != nil {
+		t.Error("announce was NOT announced but an Announcer was handed over")
+	}
 	if connection.Lifecycle == nil {
 		t.Error("the lifecycle belongs to no capability group and must always be present")
 	}
