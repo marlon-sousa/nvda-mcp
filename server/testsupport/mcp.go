@@ -39,11 +39,15 @@ type MCPHarness struct {
 	Session *sdk.ClientSession
 
 	// Server is the assembled process, for the rare assertion that is about
-	// the composition rather than about what the client sees.
+	// the composition rather than about what the client sees. NIL when the
+	// server under test is a separate PROCESS rather than an in-process
+	// composition -- which is what the conformance tier drives.
 	Server *wiring.Server
 
 	// Bridge is the fake bridge the server will dial, so a test can seed
-	// command answers and assert on what the bridge was sent.
+	// command answers and assert on what the bridge was sent. NIL when the
+	// bridge is real: the conformance tier's whole point is that nothing on
+	// the far side of the wire is ours.
 	Bridge *FakeBridge
 
 	// ToolsChanged receives one value per tools/list_changed notification.
@@ -78,6 +82,23 @@ func StartMCP(t *testing.T, options BridgeOptions) *MCPHarness {
 	}
 	t.Cleanup(func() { _ = serverSession.Close() })
 
+	harness := AttachMCP(t, clientTransport)
+	harness.Server = server
+	harness.Bridge = bridge
+	return harness
+}
+
+// AttachMCP connects a client over an already-built transport and wraps it in
+// the harness, so every assertion helper below works the same whichever server
+// is on the other end.
+//
+// It exists for the conformance tier, where the server is the BUILT BINARY over
+// stdio rather than an in-process composition, and the bridge is the real Python
+// one. Everything a test does through the harness is ordinary MCP either way,
+// which is the point: the tiers differ in what is real, never in how they ask.
+func AttachMCP(t *testing.T, transport sdk.Transport) *MCPHarness {
+	t.Helper()
+
 	changed := make(chan struct{}, 32)
 	client := sdk.NewClient(&sdk.Implementation{Name: "test-client", Version: "0"}, &sdk.ClientOptions{
 		ToolListChangedHandler: func(context.Context, *sdk.ToolListChangedRequest) {
@@ -90,15 +111,13 @@ func StartMCP(t *testing.T, options BridgeOptions) *MCPHarness {
 		},
 	})
 
-	session, err := client.Connect(ctx, clientTransport, nil)
+	session, err := client.Connect(context.Background(), transport, nil)
 	if err != nil {
 		t.Fatalf("connecting the client: %v", err)
 	}
 	t.Cleanup(func() { _ = session.Close() })
 
-	return &MCPHarness{
-		Session: session, Server: server, Bridge: bridge, ToolsChanged: changed,
-	}
+	return &MCPHarness{Session: session, ToolsChanged: changed}
 }
 
 // listen starts the fake bridge on a real loopback socket. Port 0, so parallel

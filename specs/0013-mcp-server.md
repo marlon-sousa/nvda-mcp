@@ -888,6 +888,61 @@ each with its one-line why, recorded in the PR that makes it (workflow rule).
    *records* a loss it discovers. That is what makes the answer proof rather
    than possibly-stale local state, per deliverable 16's table.
 
+## Delivery amendments — 10c
+
+The layout above is the reviewed one; these are the changes delivery forced,
+each with its one-line why, recorded in the PR that makes it (workflow rule).
+
+1. **The bridge side of the conformance harness is a startable script in the
+   BRIDGE's own tests, not a second Go program** —
+   `bridges/nvda/tests/support/conformance_bridge.py` is exactly the composition
+   the existing headless scenarios use (`wiring.build_session`, a
+   `FakeAdapterFactory`, a real `TcpListener`/`NamedPipeListener` behind a real
+   `BridgeServer`), made runnable from outside pytest. Reusing it rather than
+   inventing a second way to stand a headless bridge up is what keeps the thing
+   under test the same bridge lane 1 proved.
+2. **The driver protocol is one JSON line on stdout and stdin EOF to stop.** The
+   driver is in another language, so anything richer would be a second protocol
+   to keep in sync with the one this tier exists to test. Stdin EOF rather than a
+   signal also means the harness cannot outlive a driver that died.
+3. **The conformance tier drives the BUILT BINARY over stdio**, not an in-process
+   composition like the headless tier. Deliverable 19 says the job builds the
+   server; driving the artifact makes the stdio adapter, the flag parsing and
+   acceptance criterion 16 (stdout carries MCP frames only) part of what is
+   proved, since a stray write to stdout would corrupt the frames and fail here.
+4. **`testsupport.AttachMCP` was extracted** so both tiers ask their questions
+   through the same MCP client harness; `MCPHarness.Server` and `.Bridge` are nil
+   in the conformance tier, because neither the server nor the bridge is ours to
+   reach into there.
+5. **A new architecture rule: the conformance tier may not mention the fake
+   bridge** (`tests/architecture`). Breaking this rule produces a *green* run
+   that proves nothing — the tier's entire value is that the far side is the real
+   Python implementation — so it is the one rule of the tier worth a test rather
+   than review. It is checked on source text, not imports, because the tier
+   legitimately imports `testsupport` for the client harness.
+6. **The `conformance` job is a NEW job name, so it is a new required-check
+   decision** and is deliberately *not* added to branch protection by the PR that
+   adds it: the workflow is pushed, the job reports once, and the setting is
+   flipped afterwards (AGENTS.md's gotcha about literal job names).
+7. **The NVDA bridge announces `speech`, `braille`, `gestures` and `announce`**,
+   so "one command per capability group" means those; `focus`/`state`/`config`
+   are unimplemented until session E and deliberately unannounced, and the
+   scenario asserts their tools are *absent* from `tools/list`. `announce` gates
+   no tool and is retained as an unknown capability, which exercises
+   protocol.md §4's ignore-what-you-do-not-know clause against a real
+   announcement.
+8. **The tier immediately earned its keep, on the transport rather than the
+   binding.** `adapters/bridge/pipe_transport_windows.go` did not translate
+   go-winio's `winio.ErrTimeout` into the `os.ErrDeadlineExceeded` the Transport
+   seam's poll contract is spelled in, so the JSON-lines client read "idle" as
+   "the connection died": **every command slower than one 50 ms poll failed over
+   the named pipe**, which is the transport the NVDA bridge ships listening on.
+   Nothing caught it — a fake bridge answers instantly, and both the in-memory
+   and loopback transports report a deadline the way `net` does. The leaf now
+   translates, and the regression test lives one tier down
+   (`tests/integration`, Windows, a deliberately slow fake handler), because the
+   subject is one leaf against the real OS and that run is minutes cheaper.
+
 ## Class/file layout summary
 
 | File | Role | Built by | Collaborators |

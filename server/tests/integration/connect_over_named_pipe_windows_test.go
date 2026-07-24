@@ -15,10 +15,14 @@
 package integration_test
 
 import (
+	"encoding/json"
 	"testing"
+	"time"
 
 	winio "github.com/Microsoft/go-winio"
 	"github.com/marlon-sousa/screen-readers-mcp/server/adapters/discovery"
+	adapterports "github.com/marlon-sousa/screen-readers-mcp/server/adapters/ports"
+	"github.com/marlon-sousa/screen-readers-mcp/server/adapters/wire"
 	"github.com/marlon-sousa/screen-readers-mcp/server/domain/entities"
 	"github.com/marlon-sousa/screen-readers-mcp/server/domain/ports"
 	"github.com/marlon-sousa/screen-readers-mcp/server/testsupport"
@@ -65,6 +69,48 @@ func TestASessionIsEstablishedOverARealNamedPipe(t *testing.T) {
 
 	if err := connection.Lifecycle.Ping(); err != nil {
 		t.Errorf("Ping over a real pipe: %v", err)
+	}
+}
+
+// A command that takes LONGER THAN ONE POLL INTERVAL still succeeds over a real
+// pipe.
+//
+// Regression, found by 10c's conformance run against the real bridge. The
+// Transport seam's contract is that an idle read reports os.ErrDeadlineExceeded;
+// go-winio reports its own winio.ErrTimeout instead, and the client reads any
+// other error as "the connection died". Untranslated, every command slower than
+// the 50ms poll -- every wait, and any gesture that makes the reader speak --
+// failed with "bridge connection lost" over the transport the NVDA bridge ships
+// listening on. Nothing caught it, because a fake bridge answers instantly and
+// the in-memory transports report the deadline the way net does.
+//
+// It belongs at THIS tier, not only in conformance: the subject is one leaf
+// against the real OS, and this run is minutes cheaper.
+func TestACommandSlowerThanThePollIntervalSurvivesOverARealPipe(t *testing.T) {
+	fake := testsupport.NewFakeBridge(testsupport.BridgeOptions{})
+	fake.Handle(wire.CommandGetSpeech, func(json.RawMessage) (any, error) {
+		// Comfortably past the poll window, and still far inside the client's
+		// call budget: the only thing that can fail this is the seam.
+		time.Sleep(6 * adapterports.PollInterval)
+		return wire.SpeechResult{Text: "spoken slowly", FromIndex: 0, ToIndex: 1}, nil
+	})
+	name := listenPipe(t, fake, "screenreaderMcpSlowTestBridge")
+
+	connection, err := newHandshake().Dial(
+		testsupport.Reader(t, "nvda", "pipe:"+name),
+		ports.SessionOptions{Mode: entities.CaptureSilent},
+	)
+	if err != nil {
+		t.Fatalf("Dial: %v", err)
+	}
+	t.Cleanup(func() { connection.Lifecycle.Close() })
+
+	captured, err := connection.Speech.SpeechSince(0)
+	if err != nil {
+		t.Fatalf("a slow command over a real pipe: %v", err)
+	}
+	if captured.Text != "spoken slowly" {
+		t.Errorf("text = %q, want the slow answer", captured.Text)
 	}
 }
 

@@ -88,6 +88,47 @@ jobs:
         env:
           GOOS: linux
 
+  # Cross-language conformance (entry 10c, spec 0013 deliverable 19). The one
+  # job where BOTH implementations of specs/wire/v1/ are real: the Go server
+  # (built, and driven over stdio like an MCP host would) against the real Python
+  # bridge (headless, no NVDA), over a real named pipe AND real loopback TCP.
+  #
+  # WHY IT IS A SEPARATE JOB. Every test in the `server` job drives a Go fake
+  # bridge that encodes with the same generated binding the server decodes with,
+  # so a bug IN THE BINDING is invisible there -- both sides would be wrong
+  # together, in agreement. This job is what replaced the same-bytes drift
+  # guarantee the two halves had while both were Python, so a run that could not
+  # reach the real bridge FAILS rather than skipping: the tests have no fall-back
+  # path, and tests/architecture keeps anyone from adding one.
+  #
+  # NEW JOB NAME, therefore a new required-check decision: branch protection
+  # matches required status checks by literal name, so adding this to
+  # required_status_checks is a deliberate settings edit made AFTER the job has
+  # reported once (ci.yml's header, and AGENTS.md's gotcha).
+  conformance:
+    name: conformance
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache-dependency-path: server/go.sum
+      # The bridge is stdlib-only, so a bare interpreter of the right version is
+      # the whole requirement. The tests probe for one by running it and fail
+      # loudly if there is none.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Build the server
+        working-directory: server
+        run: go build ./...
+      # -count=1 so a cached PASS can never stand in for a run that did not
+      # actually reach the bridge.
+      - name: Conformance against the real Python bridge (pipe and TCP)
+        working-directory: server
+        run: go test -tags conformance -count=1 -v ./tests/conformance/
+
   nvda-bridge:
     name: nvda-bridge
     runs-on: windows-latest
