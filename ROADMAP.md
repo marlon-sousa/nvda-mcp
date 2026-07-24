@@ -228,9 +228,11 @@ real-world run against a live NVDA) is unblocked and is the next step.
       encoding with that same binding — has somewhere to surface. It found one
       on its first run (the named-pipe leaf reporting an idle read as a lost
       connection, so every command slower than one 50 ms poll failed over the
-      transport the add-on ships listening on). **The `conformance` job is a new
-      job name and is deliberately not in branch protection yet** — that is a
-      settings edit made after the job has reported once.
+      transport the add-on ships listening on). The `conformance` job is a new
+      job name, so it became a **required status check only after it had
+      reported green on main** (2026-07-23) — branch protection matches required
+      checks by literal name, so pushing the workflow and flipping the setting
+      are deliberately two steps, in that order.
 
 ## Convergence (requires C and D both Done)
 
