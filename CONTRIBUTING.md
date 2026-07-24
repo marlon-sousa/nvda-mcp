@@ -124,19 +124,22 @@ An empty list means it is not started — revisit step 2.
 
 ### 4. The driver
 
-[`scripts/live_test.py`](scripts/live_test.py) stands in for the MCP client: it
-launches the server binary, speaks MCP over stdio, connects to NVDA, and runs
-the tool calls a scenario asks for. A PR's checklist says which calls to make
-and what you should hear; the script is how you make them. Its `--help`-less
-header lists every command it accepts. A quick connectivity check, which also
-proves `announce` is audible, is:
+[`scripts/live_test.py`](scripts/live_test.py) stands in for the MCP client. You
+do not assemble commands or reason about indices — each **named scenario** is
+self-contained: it connects, walks its steps, checks what it can on its own (tool
+gating, index arithmetic, error shapes), tells you when to focus a window, asks
+you to confirm what you heard, and prints `PASS` / `FAIL` / `EAR` (needs your
+ear) per check with a summary. Run it in a terminal for the guided experience;
+run it with no scenario to list them all.
+
+A quick connectivity check, which also proves `announce` is audible, is:
 
 ```sh
 py -3.13 scripts/live_test.py ./server/screenreader-mcp.exe smoke
 ```
 
-If you hear the announcement, the whole chain is wired up. The concrete
-scenarios to run for a given change are in that change's PR.
+If you hear the announcement, the whole chain is wired up. Which scenarios to run
+for a given change — and what each should show — is in that change's PR.
 
 ## Opening a pull request
 
